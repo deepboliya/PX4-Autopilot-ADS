@@ -5,6 +5,9 @@
 
 using namespace time_literals;
 
+// V1.17 ARCHITECTURE: Initialize the module descriptor
+ModuleBase::Descriptor LOSSensorDriver::desc{LOSSensorDriver::task_spawn, LOSSensorDriver::custom_command, LOSSensorDriver::print_usage};
+
 // ==========================================================
 // CRC32 FUNCTION
 // ==========================================================
@@ -17,19 +20,11 @@ uint32_t LOSSensorDriver::crc32_compute(
     uint32_t crc = 0xFFFFFFFF;
 
     for (size_t i = 0; i < length; i++) {
-
         crc ^= data[i];
-
         for (int j = 0; j < 8; j++) {
-
             if (crc & 1) {
-
-                crc =
-                    (crc >> 1)
-                    ^ 0xEDB88320;
-
+                crc = (crc >> 1) ^ 0xEDB88320;
             } else {
-
                 crc >>= 1;
             }
         }
@@ -68,7 +63,6 @@ LOSSensorDriver::~LOSSensorDriver()
     ScheduleClear();
 
     if (_fd >= 0) {
-
         ::close(_fd);
     }
 
@@ -84,7 +78,6 @@ LOSSensorDriver::~LOSSensorDriver()
 bool LOSSensorDriver::init()
 {
     ScheduleOnInterval(5000_us);
-
     return true;
 }
 
@@ -97,7 +90,6 @@ bool LOSSensorDriver::parse_frame(
 )
 {
     if (_rx_index < LOS_FRAME_SIZE) {
-
         return false;
     }
 
@@ -109,53 +101,35 @@ bool LOSSensorDriver::parse_frame(
 
     _rx_index = 0;
 
-    // ======================================================
     // MAGIC CHECK
-    // ======================================================
-
     if (frame->magic != LOS_MAGIC) {
-
         PX4_WARN("Invalid magic");
-
         return false;
     }
 
-    // ======================================================
     // VERSION CHECK
-    // ======================================================
-
     if (frame->version != LOS_VERSION) {
-
         PX4_WARN("Invalid version");
-
         return false;
     }
 
-    // ======================================================
     // CRC CHECK
-    // ======================================================
-
-    uint32_t computed_crc =
-        crc32_compute(
-            reinterpret_cast<uint8_t *>(frame),
-            LOS_FRAME_SIZE - sizeof(uint32_t)
-        );
+    uint32_t computed_crc = crc32_compute(
+        reinterpret_cast<uint8_t *>(frame),
+        LOS_FRAME_SIZE - sizeof(uint32_t)
+    );
 
     if (computed_crc != frame->crc32) {
-
         perf_count(_crc_errors);
-
         PX4_WARN(
             "CRC mismatch recv=0x%08lx calc=0x%08lx",
             (unsigned long)frame->crc32,
             (unsigned long)computed_crc
         );
-
         return false;
     }
 
     perf_count(_frames_ok);
-
     return true;
 }
 
@@ -165,55 +139,33 @@ bool LOSSensorDriver::parse_frame(
 
 void LOSSensorDriver::Run()
 {
-    // ======================================================
     // OPEN UART
-    // ======================================================
-
     if (_fd < 0) {
-
         _fd = ::open(
             _device,
             O_RDWR | O_NOCTTY | O_NONBLOCK
         );
 
         if (_fd < 0) {
-
-            PX4_ERR(
-                "Failed to open %s",
-                _device
-            );
-
+            PX4_ERR("Failed to open %s", _device);
             return;
         }
 
         struct termios uart_config {};
 
         if (tcgetattr(_fd, &uart_config) < 0) {
-
             PX4_ERR("tcgetattr failed");
-
             return;
         }
 
-        // ==================================================
         // UART CONFIG
-        // ==================================================
-
         cfsetispeed(&uart_config, B921600);
         cfsetospeed(&uart_config, B921600);
 
-        uart_config.c_cflag &=
-            ~(PARENB | CSTOPB | CSIZE);
-
-        uart_config.c_cflag |=
-            (CS8 | CLOCAL | CREAD);
-
-        uart_config.c_lflag &=
-            ~(ECHO | ICANON | ISIG | IEXTEN);
-
-        uart_config.c_iflag &=
-            ~(IXON | IXOFF | IXANY);
-
+        uart_config.c_cflag &= ~(PARENB | CSTOPB | CSIZE);
+        uart_config.c_cflag |= (CS8 | CLOCAL | CREAD);
+        uart_config.c_lflag &= ~(ECHO | ICANON | ISIG | IEXTEN);
+        uart_config.c_iflag &= ~(IXON | IXOFF | IXANY);
         uart_config.c_oflag &= ~OPOST;
 
         tcsetattr(
@@ -222,141 +174,74 @@ void LOSSensorDriver::Run()
             &uart_config
         );
 
-        PX4_INFO(
-            "LOS Driver opened %s",
-            _device
-        );
+        PX4_INFO("LOS Driver opened %s", _device);
     }
 
-    // ======================================================
     // READ UART
-    // ======================================================
-
     uint8_t temp_buffer[64];
-
-    int bytes_read =
-        ::read(
-            _fd,
-            temp_buffer,
-            sizeof(temp_buffer)
-        );
+    int bytes_read = ::read(
+        _fd,
+        temp_buffer,
+        sizeof(temp_buffer)
+    );
 
     if (bytes_read <= 0) {
-
         return;
     }
 
-    // ======================================================
     // BYTE STREAM PARSER
-    // ======================================================
-
     for (int i = 0; i < bytes_read; i++) {
 
-        // ==================================================
         // WAIT FOR MAGIC BYTE
-        // ==================================================
-
-        if (_rx_index == 0 &&
-            temp_buffer[i] != LOS_MAGIC) {
-
+        if (_rx_index == 0 && temp_buffer[i] != LOS_MAGIC) {
             continue;
         }
 
-        // ==================================================
         // STORE BYTE
-        // ==================================================
+        _rx_buffer[_rx_index++] = temp_buffer[i];
 
-        _rx_buffer[_rx_index++] =
-            temp_buffer[i];
-
-        // ==================================================
         // FRAME COMPLETE
-        // ==================================================
-
         if (_rx_index == LOS_FRAME_SIZE) {
-
             LOSFrame frame {};
 
             if (!parse_frame(&frame)) {
-
                 continue;
             }
 
-            // ==============================================
             // PACKET LOSS DETECTION
-            // ==============================================
-
             if (!_first_packet) {
-
-                uint16_t expected =
-                    _last_seq + 1;
-
+                uint16_t expected = _last_seq + 1;
                 if (frame.seq != expected) {
-
                     perf_count(_sequence_errors);
-
                     PX4_WARN(
                         "Packet loss expected=%u got=%u",
                         expected,
                         frame.seq
                     );
                 }
-
             } else {
-
                 _first_packet = false;
             }
 
             _last_seq = frame.seq;
 
-            // ==============================================
             // CREATE uORB MESSAGE
-            // ==============================================
-
             los_sensor_s msg {};
-
-            msg.timestamp =
-                hrt_absolute_time();
-
+            msg.timestamp = hrt_absolute_time();
             msg.device_id = 12345;
+            msg.seq = frame.seq;
+            msg.azimuth = frame.azimuth;
+            msg.elevation = frame.elevation;
+            msg.azimuth_rate = frame.azimuth_rate;
+            msg.elevation_rate = frame.elevation_rate;
+            msg.azimuth_var = frame.azimuth_var;
+            msg.elevation_var = frame.elevation_var;
+            msg.azimuth_rate_var = frame.azimuth_rate_var;
+            msg.elevation_rate_var = frame.elevation_rate_var;
+            msg.quality = frame.quality;
+            msg.status_flags = frame.status_flags;
 
-            msg.seq =
-                frame.seq;
-
-            msg.azimuth =
-                frame.azimuth;
-
-            msg.elevation =
-                frame.elevation;
-
-            msg.azimuth_rate =
-                frame.azimuth_rate;
-
-            msg.elevation_rate =
-                frame.elevation_rate;
-
-            msg.azimuth_var =
-                frame.azimuth_var;
-
-            msg.elevation_var =
-                frame.elevation_var;
-
-            msg.azimuth_rate_var =
-                frame.azimuth_rate_var;
-
-            msg.elevation_rate_var =
-                frame.elevation_rate_var;
-
-            msg.quality =
-                frame.quality;
-
-            msg.status_flags =
-                frame.status_flags;
-
-            // ==============================================
             // PUBLISH
-            // ==============================================
-
             _pub.publish(msg);
 
             PX4_INFO(
@@ -381,31 +266,22 @@ int LOSSensorDriver::task_spawn(
     const char *device = "/dev/ttyS3";
 
     if (argc >= 2) {
-
         device = argv[1];
     }
 
-    LOSSensorDriver *instance =
-        new LOSSensorDriver(device);
+    LOSSensorDriver *instance = new LOSSensorDriver(device);
 
     if (!instance) {
-
         PX4_ERR("alloc failed");
-
         return PX4_ERROR;
     }
 
-    _object.store(instance);
-    _task_id = task_id_is_work_queue;
+    // V1.17 ARCHITECTURE: Store instance via descriptor
+    desc.object.store(instance);
 
     if (!instance->init()) {
-
         delete instance;
-
-        _object.store(nullptr);
-
-        _task_id = -1;
-
+        desc.object.store(nullptr);
         return PX4_ERROR;
     }
 
@@ -438,7 +314,6 @@ int LOSSensorDriver::print_usage(
 )
 {
     if (reason) {
-
         PX4_WARN("%s", reason);
     }
 
@@ -478,8 +353,6 @@ los_sensor_driver_main(
     char *argv[]
 )
 {
-    return LOSSensorDriver::main(
-        argc,
-        argv
-    );
+    // V1.17 ARCHITECTURE: Pass descriptor into base main function
+    return ModuleBase::main(LOSSensorDriver::desc, argc, argv);
 }

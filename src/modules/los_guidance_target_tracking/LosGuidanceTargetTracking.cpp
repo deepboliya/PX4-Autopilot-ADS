@@ -101,8 +101,8 @@ void LosGuidanceTargetTracking::Run()
 		}
 	}
 	else if (_los_sensor_sub.update(&los_sensor_meas)) {
-		_latest_sample.alpha = los_sensor_meas.alpha;
-		_latest_sample.beta = los_sensor_meas.beta;
+		_latest_sample.alpha = los_sensor_meas.azimuth;
+		_latest_sample.beta = los_sensor_meas.elevation;
 		_has_sample = true;
 		_last_sample_timestamp = los_sensor_meas.timestamp;
 
@@ -111,7 +111,7 @@ void LosGuidanceTargetTracking::Run()
 		rates_sp.timestamp = hrt_absolute_time();
 		rates_sp.roll = 0.0f;
 		rates_sp.pitch = 0.0f;
-		rates_sp.yaw = los_sensor_meas.alpha * 1.5f; 
+		rates_sp.yaw = los_sensor_meas.azimuth * 1.5f; 
 		_rates_sp_pub.publish(rates_sp);
 
 		// Control servo angle using PWM to reduce beta
@@ -124,7 +124,7 @@ void LosGuidanceTargetTracking::Run()
 		vehicle_cmd.param3 = NAN;
 		vehicle_cmd.param4 = NAN;
 		
-		float servo_val = los_sensor_meas.beta * 0.5f; 
+		float servo_val = los_sensor_meas.elevation * 0.5f; 
 		if (servo_val > 1.0f) servo_val = 1.0f;
 		if (servo_val < -1.0f) servo_val = -1.0f;
 		
@@ -274,5 +274,5 @@ void LosGuidanceTargetTracking::publish_offboard_setpoint(const Vector3f &accele
 
 extern "C" __EXPORT int los_guidance_target_tracking_main(int argc, char *argv[])
 {
-	return LosGuidanceTargetTracking::main(argc, argv);
+	return ModuleBase::main(LosGuidanceTargetTracking::desc, argc, argv);
 }

@@ -132,7 +132,7 @@ set(msg_files
 	LaunchDetectionStatus.msg
 	LedControl.msg
 	LosMeasurements.msg
-	Los_sensor.msg
+	LosSensor.msg
 	LoggerStatus.msg
 	LogMessage.msg
 	MagnetometerBiasEstimate.msg
