@@ -1,0 +1,9 @@
+menuconfig MODULES_CUSTOM_MC_ATT_CONTROL
+    bool "custom_mc_att_control"
+    default n
+    ---help---
+        Enable support for custom minimal attitude controller.
+
+        This is a simplified attitude controller designed for research
+        and educational purposes. It provides basic PID attitude control
+        optimized for Gazebo X500.
