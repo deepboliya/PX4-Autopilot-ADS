@@ -78,8 +78,9 @@ void CustomAttitudeControl::Run()
 		}
 	}
 
-	// Calculate attitude error
-	const Quatf q_error = q_setpoint * q_current.inversed();
+	// Calculate attitude error (Body Frame)
+	// Error = Current_Inverse * Setpoint
+	const Quatf q_error = q_current.inversed() * q_setpoint;
 
 	// Convert quaternion error to axis-angle (small angle approximation)
 	Vector3f attitude_error;
@@ -91,6 +92,11 @@ void CustomAttitudeControl::Run()
 
 	// Simple PID control
 	Vector3f rates_setpoint = pid_controller(attitude_error, dt);
+
+	// Apply Yaw Rate Feedforward
+	if (PX4_ISFINITE(attitude_setpoint.yaw_sp_move_rate)) {
+		rates_setpoint(2) += attitude_setpoint.yaw_sp_move_rate;
+	}
 
 	// Publish rate setpoint
 	vehicle_rates_setpoint_s rates_sp{};
