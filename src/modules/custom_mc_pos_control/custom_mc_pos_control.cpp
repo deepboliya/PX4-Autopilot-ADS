@@ -355,7 +355,7 @@ void CustomPositionControl::velocity_control(float dt)
 }
 
 void CustomPositionControl::acceleration_control()
-{
+{	/*
 	// Assume standard gravity for attitude generation
 	float z_specific_force = -CONSTANTS_ONE_G;
 
@@ -363,7 +363,7 @@ void CustomPositionControl::acceleration_control()
 	Vector3f body_z = Vector3f(-_acc_sp(0), -_acc_sp(1), -z_specific_force).normalized();
 
 	// Limit tilt
-	limit_tilt(body_z, Vector3f(0.f, 0.f, 1.f), _lim_tilt);
+	// limit_tilt(body_z, Vector3f(0.f, 0.f, 1.f), _lim_tilt);
 
 	// Convert to thrust assuming hover thrust produces standard gravity
 	const float thrust_ned_z = _acc_sp(2) * (_hover_thrust / CONSTANTS_ONE_G) - _hover_thrust;
@@ -372,6 +372,18 @@ void CustomPositionControl::acceleration_control()
 	const float cos_ned_body = Vector3f(0.f, 0.f, 1.f).dot(body_z);
 	const float collective_thrust = math::min(thrust_ned_z / cos_ned_body, -_lim_thr_min);
 
+	_thr_sp = body_z * collective_thrust;
+	*/
+	Vector3f gravity(0.f, 0.f, CONSTANTS_ONE_G);
+    	Vector3f total_acceleration = _acc_sp - gravity;
+	if (total_acceleration.norm_squared() < 0.001f) {
+		_thr_sp.zero();
+		return;
+    	}
+	Vector3f body_z = total_acceleration.normalized();
+	float acceleration_magnitude = total_acceleration.norm();
+    	float collective_thrust = (acceleration_magnitude / CONSTANTS_ONE_G) * _hover_thrust; // mass = hover_thrust / g
+	collective_thrust = math::min(collective_thrust, _lim_thr_max);
 	_thr_sp = body_z * collective_thrust;
 }
 
