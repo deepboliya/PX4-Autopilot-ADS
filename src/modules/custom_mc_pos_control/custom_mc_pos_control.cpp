@@ -45,12 +45,15 @@ CustomPositionControl::CustomPositionControl() :
 	_gain_vel_d = Vector3f(_param_mpc_xy_vel_d_acc.get(), _param_mpc_xy_vel_d_acc.get(), _param_mpc_z_vel_d_acc.get());
 
 	// Update limits from parameters
-	_lim_vel_horizontal = _param_mpc_xy_vel_max.get();
-	_lim_vel_up = _param_mpc_z_vel_max_up.get();
-	_lim_vel_down = _param_mpc_z_vel_max_dn.get();
+	// _lim_vel_horizontal = _param_mpc_xy_vel_max.get();
+	// _lim_vel_up = _param_mpc_z_vel_max_up.get();
+	// _lim_vel_down = _param_mpc_z_vel_max_dn.get();
+	_lim_vel_horizontal = 1000.0f;
+	_lim_vel_up = 1000.0f;
+	_lim_vel_down = 1000.0f;
 	_lim_thr_min = math::max(_param_mpc_thr_min.get(), 0.01f);
 	_lim_thr_max = _param_mpc_thr_max.get();
-	_lim_tilt = math::radians(_param_mpc_tiltmax_air.get());
+	// _lim_tilt = math::radians(_param_mpc_tiltmax_air.get());
 
 	// Set hover thrust
 	_hover_thrust = math::constrain(_param_mpc_thr_hover.get(), 0.1f, 0.9f);
