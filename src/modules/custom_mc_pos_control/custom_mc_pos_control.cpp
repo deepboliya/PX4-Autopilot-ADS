@@ -201,11 +201,8 @@ void CustomPositionControl::Run()
 				// Position P control
 				position_control(states);
 
-				// Velocity PID control
+				// Velocity PID control (calls acceleration_control internally)
 				velocity_control(dt);
-
-				// Convert to thrust and attitude
-				acceleration_control();
 
 				// Ensure valid yaw
 				_yawspeed_sp = PX4_ISFINITE(_yawspeed_sp) ? _yawspeed_sp : 0.f;
@@ -261,6 +258,9 @@ void CustomPositionControl::position_control(const PositionControlStates &states
 				_vel_sp(i) += vel_sp_position(i);
 			}
 		}
+		else{
+			PX4_INFO("Position control NAN detected on axis %d", i);
+		}
 	}
 
 	// Make sure there are no NAN for further reference
@@ -302,7 +302,7 @@ void CustomPositionControl::velocity_control(float dt)
 		}
 	}
 
-	// Convert acceleration to thrust
+	// Convert acceleration to thrust (needed before anti-windup uses _thr_sp)
 	acceleration_control();
 
 	// Integrator anti-windup in vertical direction
