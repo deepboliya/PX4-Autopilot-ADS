@@ -22,7 +22,7 @@ using namespace time_literals;
 
 // CRITICAL TIMING CONSTANTS - Optimized for Gazebo X500
 static constexpr float ATTITUDE_CTRL_EXPECTED_DT = 0.004f; // 250Hz expected rate
-static constexpr float ATTITUDE_CTRL_MIN_DT = 0.001f;      // 1000Hz maximum rate
+static constexpr float ATTITUDE_CTRL_MIN_DT = 0.0002f;      // 5000Hz maximum rate
 static constexpr float ATTITUDE_CTRL_MAX_DT = 0.02f;       // 50Hz minimum rate
 
 // X500 SPECIFIC CONFIGURATION
@@ -63,6 +63,7 @@ private:
     // Controller state
     matrix::Vector3f _attitude_error_integral{0.f, 0.f, 0.f};
     matrix::Vector3f _attitude_error_previous{0.f, 0.f, 0.f};
+    matrix::Vector3f _thrust_setpoint_body{0.f, 0.f, 0.f};  // Persistent thrust storage
     hrt_abstime _last_run{0};
 
     // Cached data from subscriptions
