@@ -121,22 +121,22 @@ Vector3f CustomAttitudeControl::pid_controller(const Vector3f &error, float dt)
     proportional(2) = _param_yaw_p.get() * error(2);    // Yaw   - typically ~2.8 for X500
 
     // Integral term (simple integration with X500-tuned gain)
-    _attitude_error_integral += error * dt;
+//     _attitude_error_integral += error * dt;
 
-    // Anti-windup: limit integral (X500-specific limits)
-    _attitude_error_integral(0) = math::constrain(_attitude_error_integral(0), -0.5f, 0.5f);
-    _attitude_error_integral(1) = math::constrain(_attitude_error_integral(1), -0.5f, 0.5f);
-    _attitude_error_integral(2) = math::constrain(_attitude_error_integral(2), -0.3f, 0.3f);
+//     // Anti-windup: limit integral (X500-specific limits)
+//     _attitude_error_integral(0) = math::constrain(_attitude_error_integral(0), -0.5f, 0.5f);
+//     _attitude_error_integral(1) = math::constrain(_attitude_error_integral(1), -0.5f, 0.5f);
+//     _attitude_error_integral(2) = math::constrain(_attitude_error_integral(2), -0.3f, 0.3f);
 
-    Vector3f integral = _attitude_error_integral * 0.15f; // X500-tuned I gain
+//     Vector3f integral = _attitude_error_integral * 0.15f; // X500-tuned I gain
 
-    // Derivative term (X500-tuned D gain)
-    Vector3f derivative = (error - _attitude_error_previous) / dt * 0.08f; // Higher D for X500 stability
-    _attitude_error_previous = error;
+//     // Derivative term (X500-tuned D gain)
+//     Vector3f derivative = (error - _attitude_error_previous) / dt * 0.08f; // Higher D for X500 stability
+//     _attitude_error_previous = error;
 
     // PID output (rate setpoint in rad/s)
-    Vector3f output = proportional + integral + derivative;
-
+//     Vector3f output = proportional + integral + derivative;
+    Vector3f output = proportional; // No integral for X500
     // Limit output rates (X500-specific limits)
     Vector3f constrained_output;
     constrained_output(0) = math::constrain(output(0), -X500_MAX_ROLL_RATE, X500_MAX_ROLL_RATE);   // Roll: ±172°/s

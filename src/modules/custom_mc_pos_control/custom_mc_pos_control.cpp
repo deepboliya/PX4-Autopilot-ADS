@@ -155,6 +155,8 @@ void CustomPositionControl::Run()
 			if (_vehicle_control_mode_sub.update(&_vehicle_control_mode)) {
 				if (!prev_enabled && _vehicle_control_mode.flag_multicopter_position_control_enabled) {
 					_time_position_control_enabled = _vehicle_control_mode.timestamp;
+					// Reset yaw setpoint to NAN to capture current yaw on first run
+					_yaw_sp = NAN;
 				} else if (prev_enabled && !_vehicle_control_mode.flag_multicopter_position_control_enabled) {
 					_setpoint = empty_trajectory_setpoint;
 				}
@@ -188,7 +190,16 @@ void CustomPositionControl::Run()
 			_pos_sp = Vector3f(_setpoint.position);
 			_vel_sp = Vector3f(_setpoint.velocity);
 			_acc_sp = Vector3f(_setpoint.acceleration);
-			_yaw_sp = _setpoint.yaw;
+			
+			// Yaw Setpoint Logic: Hold last valid yaw if input is NAN
+			if (PX4_ISFINITE(_setpoint.yaw)) {
+				_yaw_sp = _setpoint.yaw;
+			}
+			// If _yaw_sp is still NAN (first run and no input), initialize to current yaw
+			if (!PX4_ISFINITE(_yaw_sp)) {
+				_yaw_sp = _yaw;
+			}
+			
 			_yawspeed_sp = _setpoint.yawspeed;
 
 			// Reset integrator if landed
@@ -204,9 +215,8 @@ void CustomPositionControl::Run()
 				// Velocity PID control (calls acceleration_control internally)
 				velocity_control(dt);
 
-				// Ensure valid yaw
+				// Ensure valid yaw rate
 				_yawspeed_sp = PX4_ISFINITE(_yawspeed_sp) ? _yawspeed_sp : 0.f;
-				_yaw_sp = PX4_ISFINITE(_yaw_sp) ? _yaw_sp : _yaw;
 
 				// Publish local position setpoint
 				vehicle_local_position_setpoint_s local_pos_sp{};
@@ -259,7 +269,7 @@ void CustomPositionControl::position_control(const PositionControlStates &states
 			}
 		}
 		else{
-			PX4_INFO("Position control NAN detected on axis %d", i);
+			// PX4_INFO("Position control NAN detected on axis %d", i);
 		}
 	}
 
