@@ -1,0 +1,17 @@
+menuconfig MODULES_CUSTOM_MC_POS_CONTROL
+	bool "custom_mc_pos_control"
+	default n
+	---help---
+		Enable support for custom minimal position controller.
+
+		This is a simplified position controller designed for research
+		and educational purposes. It provides basic cascaded P-PID
+		position/velocity control optimized for Gazebo X500.
+
+		Features:
+		- Position P-control for velocity setpoint generation
+		- Velocity PID control for acceleration/thrust generation
+		- Simplified thrust-to-attitude conversion
+		- No VTOL support (pure quadcopter)
+		- No goto control complexity
+		- Minimal parameter set
