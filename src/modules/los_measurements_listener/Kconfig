@@ -1,0 +1,5 @@
+menuconfig MODULES_LOS_MEASUREMENTS_LISTENER
+	bool "los_measurements_listener"
+	default n
+	---help---
+		Enable support for los_measurements_listener

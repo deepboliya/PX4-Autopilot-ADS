@@ -144,6 +144,9 @@ subscriptions:
   - topic: /fmu/in/manual_control_input
     type: px4_msgs::msg::ManualControlSetpoint
 
+  - topic: /fmu/in/los_measurements
+    type: px4_msgs::msg::LosMeasurements
+
   - topic: /fmu/in/offboard_control_mode
     type: px4_msgs::msg::OffboardControlMode
 
