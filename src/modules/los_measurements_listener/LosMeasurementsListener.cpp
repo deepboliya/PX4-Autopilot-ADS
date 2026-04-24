@@ -107,39 +107,39 @@ void LosMeasurementsListener::Run()
 		}
 	}
 
-	const hrt_abstime now = hrt_absolute_time();
+	// const hrt_abstime now = hrt_absolute_time();
 
-	if ((_last_report_timestamp == 0) || ((now - _last_report_timestamp) >= 1'000'000)) {
-		const uint64_t messages_since_last_report = _messages_received - _messages_received_last_report;
-		_messages_received_last_report = _messages_received;
-		_messages_last_1s = messages_since_last_report;
-		_last_report_timestamp = now;
+	// if ((_last_report_timestamp == 0) || ((now - _last_report_timestamp) >= 1'000'000)) {
+	// 	const uint64_t messages_since_last_report = _messages_received - _messages_received_last_report;
+	// 	_messages_received_last_report = _messages_received;
+	// 	_messages_last_1s = messages_since_last_report;
+	// 	_last_report_timestamp = now;
 
-		if (_has_sample) {
-			double dt_mean_us = 0.0;
-			double dt_std_us = 0.0;
-			double lat_mean_us = 0.0;
-			double lat_std_us = 0.0;
+	// 	if (_has_sample) {
+	// 		double dt_mean_us = 0.0;
+	// 		double dt_std_us = 0.0;
+	// 		double lat_mean_us = 0.0;
+	// 		double lat_std_us = 0.0;
 
-			compute_mean_stddev(static_cast<double>(_dt_sum_us), _dt_sum_sq_us, _dt_window_count, dt_mean_us, dt_std_us);
-			compute_mean_stddev(static_cast<double>(_latency_sum_us), _latency_sum_sq_us, _stats_window_count, lat_mean_us,
-					   lat_std_us);
+	// 		compute_mean_stddev(static_cast<double>(_dt_sum_us), _dt_sum_sq_us, _dt_window_count, dt_mean_us, dt_std_us);
+	// 		compute_mean_stddev(static_cast<double>(_latency_sum_us), _latency_sum_sq_us, _stats_window_count, lat_mean_us,
+	// 				   lat_std_us);
 
-			PX4_INFO("1s=%" PRIu64 " a=%.3f b=%.3f ar=%.3f br=%.3f dt=%.1f/%.1f lat=%.1f/%.1f",
-				 _messages_last_1s,
-				 (double)_latest_sample.alpha,
-				 (double)_latest_sample.beta,
-				 (double)_latest_sample.alpha_rate,
-				 (double)_latest_sample.beta_rate,
-				 dt_mean_us,
-				 dt_std_us,
-				 lat_mean_us,
-				 lat_std_us);
+	// 		// PX4_INFO("1s=%" PRIu64 " a=%.3f b=%.3f ar=%.3f br=%.3f dt=%.1f/%.1f lat=%.1f/%.1f",
+	// 		// 	 _messages_last_1s,
+	// 		// 	 (double)_latest_sample.alpha,
+	// 		// 	 (double)_latest_sample.beta,
+	// 		// 	 (double)_latest_sample.alpha_rate,
+	// 		// 	 (double)_latest_sample.beta_rate,
+	// 		// 	 dt_mean_us,
+	// 		// 	 dt_std_us,
+	// 		// 	 lat_mean_us,
+	// 		// 	 lat_std_us);
 
-		} else {
-			PX4_INFO("1s=%" PRIu64 " wait", _messages_last_1s);
-		}
-	}
+	// 	} else {
+	// 		// PX4_INFO("1s=%" PRIu64 " wait", _messages_last_1s);
+	// 	}
+	// }
 }
 
 int LosMeasurementsListener::task_spawn(int argc, char *argv[])
@@ -179,13 +179,16 @@ int LosMeasurementsListener::print_status()
 		compute_mean_stddev(static_cast<double>(_latency_sum_us), _latency_sum_sq_us, _stats_window_count, lat_mean_us,
 				   lat_std_us);
 
-		PX4_INFO("a=%.3f b=%.3f ar=%.3f br=%.3f",
+		PX4_INFO("a=%.3f b=%.3f ar=%.3f br=%.3f lat_now=%.1f dt_now=%.1f",
 			 (double)_latest_sample.alpha,
 			 (double)_latest_sample.beta,
 			 (double)_latest_sample.alpha_rate,
-			 (double)_latest_sample.beta_rate);
+			 (double)_latest_sample.beta_rate,
+			 (double)_latency_window_us[_stats_window_head],
+			 (double)_dt_window_us[_dt_window_head]);
 		PX4_INFO("dt m=%.1f s=%.1f n=%u", dt_mean_us, dt_std_us, (unsigned)_dt_window_count);
 		PX4_INFO("lat m=%.1f s=%.1f n=%u", lat_mean_us, lat_std_us, (unsigned)_stats_window_count);
+		PX4_INFO("last sample timestamp: %" PRIu64 " us", _last_sample_timestamp);
 	}
 
 	return 0;
