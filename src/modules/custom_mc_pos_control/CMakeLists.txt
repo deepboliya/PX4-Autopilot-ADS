@@ -1,6 +1,9 @@
 ############################################################################
 #
-#   Custom Minimal Position Controller for X500 Quadcopter
+#   Custom Multicopter Position Controller - flat single-file replica of
+#   mc_pos_control's core PositionControl + ControlMath. All cascaded PID,
+#   tilt-limit, thrust-to-attitude conversion and EKF reset handling is
+#   in the .cpp.
 #
 ############################################################################
 
@@ -15,4 +18,5 @@ px4_add_module(
 		mathlib
 		geo
 		px4_work_queue
+		SlewRate
 )
