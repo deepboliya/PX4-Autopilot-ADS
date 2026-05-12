@@ -1,0 +1,80 @@
+module_name: los_guidance
+parameters:
+- group: LOS Guidance
+  definitions:
+    LOS_GD_EN:
+      description:
+        short: Enable LOS-derived OFFBOARD acceleration publisher
+        long: |
+          When enabled, los_guidance turns body-frame bearing measurements
+          (alpha = yaw, beta = pitch) from a gimbal-mounted camera into a
+          NED-frame acceleration command and publishes it on
+          trajectory_setpoint together with an offboard_control_mode
+          heartbeat. The vehicle still has to be switched to OFFBOARD via
+          RC/QGC/MAVLink for mc_pos_control to consume the command.
+          Disable to silence the internal publisher and hand the OFFBOARD
+          slot back to external MAVLink/uXRCE-DDS sources.
+      type: boolean
+      default: 0
+
+    LOS_GD_ACC_MAX:
+      description:
+        short: Constant magnitude of the LOS-derived NED acceleration command
+        long: |
+          The acceleration vector published on trajectory_setpoint has this
+          (Euclidean) magnitude, with its direction taken from the
+          NED-frame unit vector that points along the camera bearing. Keep
+          this safely below MPC_ACC_HOR_MAX / MPC_ACC_DOWN_MAX so the
+          position controller does not have to saturate.
+      type: float
+      default: 5.0
+      min: 0.5
+      max: 50.0
+      unit: m/s^2
+      decimal: 2
+
+    LOS_GD_GIMB_PIT:
+      description:
+        short: Fixed gimbal pitch (camera tilt about body Y axis)
+        long: |
+          The camera is mounted on a 1-DOF gimbal that can only pitch
+          about the body Y axis. While the gimbal controller is not yet
+          implemented, the bearings are interpreted as if the camera were
+          held at this constant pitch angle relative to the body frame.
+          Sign convention follows the body Y rotation in FRD: positive
+          values rotate the optical axis from forward toward down (camera
+          tilted down).
+      type: float
+      default: 0.0
+      min: -1.5708
+      max: 1.5708
+      unit: rad
+      decimal: 3
+
+    LOS_GD_TIMEOUT:
+      description:
+        short: LOS sample staleness threshold
+        long: |
+          If no fresh los_measurements sample has arrived within this
+          window, the module stops publishing trajectory_setpoint and the
+          offboard_control_mode heartbeat. This lets commander time out
+          OFFBOARD and engage the configured failsafe.
+      type: int32
+      default: 200
+      min: 20
+      max: 5000
+      unit: ms
+
+    LOS_GD_PUB_HZ:
+      description:
+        short: Internal publish rate for offboard_control_mode + trajectory_setpoint
+        long: |
+          Must be high enough (>= 25 Hz) to keep the commander OFFBOARD
+          heartbeat alive. Applied at module start; runtime changes take
+          effect on the next parameter-update tick (the work-item is
+          rescheduled).
+      type: int32
+      default: 50
+      min: 10
+      max: 250
+      unit: Hz

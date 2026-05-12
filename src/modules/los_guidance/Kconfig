@@ -1,0 +1,11 @@
+menuconfig MODULES_LOS_GUIDANCE
+	bool "los_guidance"
+	default n
+	---help---
+		Enable support for los_guidance
+
+		Converts body-frame LOS bearings (alpha = yaw, beta = pitch) from a
+		gimbal-mounted camera into a NED-frame acceleration setpoint and
+		publishes the result via the OFFBOARD pipeline
+		(offboard_control_mode + trajectory_setpoint), so that
+		mc_pos_control consumes it when OFFBOARD is engaged.
