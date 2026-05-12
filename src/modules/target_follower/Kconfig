@@ -1,0 +1,5 @@
+menuconfig MODULES_TARGET_FOLLOWER
+	bool "target_follower"
+	default n
+	---help---
+		Enable target_follower module.
