@@ -1,6 +1,6 @@
 px4_add_module(
 	MODULE modules__los_measurements_listener
-	MAIN los_measurement_listener
+	MAIN los_measurements_listener
 	SRCS
 		LosMeasurementsListener.cpp
 		LosMeasurementsListener.hpp
