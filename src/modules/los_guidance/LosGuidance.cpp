@@ -80,7 +80,7 @@ void LosGuidance::parameters_updated()
 	}
 }
 
-bool LosGuidance::(Vector3f &acceleration_ned) const
+bool LosGuidance::compute_acceleration_command_ned(Vector3f &acceleration_ned) const
 {
 	if (!_has_sample || !_has_attitude) {
 		return false;
