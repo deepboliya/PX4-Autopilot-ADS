@@ -1,0 +1,5 @@
+menuconfig DRIVERS_LOS_SENSOR
+    bool "LOS Sensor Driver"
+    default n
+    ---help---
+        Custom UART LOS sensor driver
