@@ -37,17 +37,31 @@ parameters:
       description:
         short: Fixed gimbal pitch (camera tilt about body Y axis)
         long: |
-          The camera is mounted on a 1-DOF gimbal that can only pitch
-          about the body Y axis. While the gimbal controller is not yet
-          implemented, the bearings are interpreted as if the camera were
-          held at this constant pitch angle relative to the body frame.
-          Sign convention follows the body Y rotation in FRD: positive
-          values rotate the optical axis from forward toward down (camera
-          tilted down).
+          While the gimbal controller is not yet implemented, bearings are
+          interpreted as if the camera were held at this constant pitch
+          relative to the body frame. Sign convention follows the body Y
+          rotation in FRD: positive values rotate the optical axis from
+          forward toward down (camera tilted down).
       type: float
       default: 0.0
       min: -1.5708
       max: 1.5708
+      unit: rad
+      decimal: 3
+
+    LOS_GD_GIMB_YAW:
+      description:
+        short: Fixed gimbal yaw offset (rotation about body Z between gimbal and body)
+        long: |
+          Additional rotation about body Z (FRD: positive turns forward toward
+          right wing) from the camera/gimbal frame into the body frame.
+          Together with LOS_GD_GIMB_PIT this matches Eulerf(roll=0, pitch, yaw)
+          in the matrix::Euler convention used by los_guidance. The previous
+          hard-coded offset was π/2 radians; default keeps that behavior.
+      type: float
+      default: 1.5708
+      min: -3.14159
+      max: 3.14159
       unit: rad
       decimal: 3
 

@@ -214,14 +214,14 @@ Use this to validate DDS-to-uORB transport for external perception LOS estimates
 
 )DESCR_STR");
 
-	PRINT_MODULE_USAGE_NAME("los_measurement_listener", "template");
+	PRINT_MODULE_USAGE_NAME("los_measurements_listener", "template");
 	PRINT_MODULE_USAGE_COMMAND("start");
 	PRINT_MODULE_USAGE_DEFAULT_COMMANDS();
 
 	return 0;
 }
 
-extern "C" __EXPORT int los_measurement_listener_main(int argc, char *argv[])
+extern "C" __EXPORT int los_measurements_listener_main(int argc, char *argv[])
 {
 	return ModuleBase::main(LosMeasurementsListener::desc, argc, argv);
 }

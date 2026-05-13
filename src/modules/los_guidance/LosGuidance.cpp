@@ -101,10 +101,10 @@ bool LosGuidance::(Vector3f &acceleration_ned) const
 	// rotates the forward axis toward -Z_g (up).
 	const Vector3f los_gimbal{cos_a * cos_b, sin_a * cos_b, -sin_b};
 
-	// Gimbal frame is body frame rotated about body Y by LOS_GD_GIMB_PIT
-	// (FRD convention: positive Y rotation tips forward toward down, i.e.
-	// camera tilted down). Express the LOS unit vector in body coordinates.
-	const Quatf q_body_from_gimbal(Eulerf(0.f, _param_los_gd_gimb_pit.get(), 0.f));
+	// Gimbal → body: Eulerf(phi, theta, psi) = (roll, pitch, yaw); roll fixed
+	// at 0. Pitch is LOS_GD_GIMB_PIT; yaw offset is LOS_GD_GIMB_YAW.
+	const Quatf q_body_from_gimbal(
+		Eulerf(0.f, _param_los_gd_gimb_pit.get(), _param_los_gd_gimb_yaw.get()));
 	const Vector3f los_body = q_body_from_gimbal.rotateVector(los_gimbal);
 
 	// vehicle_attitude.q rotates body-frame vectors to NED, exactly what we
@@ -244,10 +244,11 @@ int LosGuidance::task_spawn(int argc, char *argv[])
 
 int LosGuidance::print_status()
 {
-	PX4_INFO("enabled=%d acc_max=%.2f gimbal_pitch=%.3f rad rate=%d Hz",
+	PX4_INFO("enabled=%d acc_max=%.2f gimbal_pitch=%.3f rad gimbal_yaw=%.3f rad rate=%d Hz",
 		 (int)_param_los_gd_en.get(),
 		 (double)_param_los_gd_acc_max.get(),
 		 (double)_param_los_gd_gimb_pit.get(),
+		 (double)_param_los_gd_gimb_yaw.get(),
 		 (int)_param_los_gd_pub_hz.get());
 
 	PX4_INFO("rx=%" PRIu64 " tx=%" PRIu64 " has_sample=%d has_attitude=%d",
@@ -284,14 +285,14 @@ int LosGuidance::print_usage(const char *reason)
 gimbal-mounted camera into a NED-frame acceleration setpoint and feeds
 the result into PX4's existing OFFBOARD pipeline.
 
-The camera sits on a 1-DOF gimbal (pitch only). For now the gimbal pitch
-is treated as a fixed parameter (`LOS_GD_GIMB_PIT`); once a real gimbal
-controller is in place it will set this rotation dynamically.
+For now the gimbal orientation relative to the body is fixed by
+`LOS_GD_GIMB_PIT` (pitch about body Y) and `LOS_GD_GIMB_YAW` (yaw about
+body Z). A future gimbal controller can drive these dynamically.
 
 Bearing frame chain (FRD throughout):
 
-  camera/gimbal frame   --R_y(LOS_GD_GIMB_PIT)-->  body frame
-                                                 --q_attitude-->  NED
+  camera/gimbal frame --Euler(0, LOS_GD_GIMB_PIT, LOS_GD_GIMB_YAW)--> body
+                                                         --q_attitude--> NED
 
 The published acceleration vector has constant magnitude `LOS_GD_ACC_MAX`
 and points along the NED-frame LOS unit vector. mc_pos_control consumes

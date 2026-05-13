@@ -98,6 +98,7 @@ private:
 		(ParamBool<px4::params::LOS_GD_EN>) _param_los_gd_en,
 		(ParamFloat<px4::params::LOS_GD_ACC_MAX>) _param_los_gd_acc_max,
 		(ParamFloat<px4::params::LOS_GD_GIMB_PIT>) _param_los_gd_gimb_pit,
+		(ParamFloat<px4::params::LOS_GD_GIMB_YAW>) _param_los_gd_gimb_yaw,
 		(ParamInt<px4::params::LOS_GD_TIMEOUT>) _param_los_gd_timeout_ms,
 		(ParamInt<px4::params::LOS_GD_PUB_HZ>) _param_los_gd_pub_hz
 	)
