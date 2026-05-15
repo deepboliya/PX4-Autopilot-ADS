@@ -14,7 +14,7 @@ publications:
 
   - topic: /fmu/out/mode_completed
     type: px4_msgs::msg::ModeCompleted
-    rate_limit: 50.
+    rate_limit: 20.
 
   - topic: /fmu/out/battery_status
     type: px4_msgs::msg::BatteryStatus
@@ -22,7 +22,7 @@ publications:
 
   - topic: /fmu/out/collision_constraints
     type: px4_msgs::msg::CollisionConstraints
-    rate_limit: 50.
+    rate_limit: 20.
 
   - topic: /fmu/out/estimator_status_flags
     type: px4_msgs::msg::EstimatorStatusFlags
@@ -55,7 +55,7 @@ publications:
 
   - topic: /fmu/out/vehicle_angular_velocity
     type: px4_msgs::msg::VehicleAngularVelocity
-    rate_limit: 100.
+    rate_limit: 20.
 
   - topic: /fmu/out/vehicle_land_detected
     type: px4_msgs::msg::VehicleLandDetected
@@ -63,42 +63,42 @@ publications:
 
   - topic: /fmu/out/vehicle_attitude
     type: px4_msgs::msg::VehicleAttitude
-    rate_limit: 50.
+    rate_limit: 20.
 
   - topic: /fmu/out/vehicle_attitude_setpoint
     type: px4_msgs::msg::VehicleAttitudeSetpoint
-    rate_limit: 50.
+    rate_limit: 20.
 
   - topic: /fmu/out/vehicle_rates_setpoint
     type: px4_msgs::msg::VehicleRatesSetpoint
-    rate_limit: 100.
+    rate_limit: 20.
 
   - topic: /fmu/out/actuator_motors
     type: px4_msgs::msg::ActuatorMotors
-    rate_limit: 100.
+    rate_limit: 20.
 
   - topic: /fmu/out/vehicle_control_mode
     type: px4_msgs::msg::VehicleControlMode
-    rate_limit: 50.
+    rate_limit: 20.
 
   - topic: /fmu/out/vehicle_command_ack
     type: px4_msgs::msg::VehicleCommandAck
 
   - topic: /fmu/out/vehicle_global_position
     type: px4_msgs::msg::VehicleGlobalPosition
-    rate_limit: 50.
+    rate_limit: 20.
 
   - topic: /fmu/out/vehicle_gps_position
     type: px4_msgs::msg::SensorGps
-    rate_limit: 50.
+    rate_limit: 20.
 
   - topic: /fmu/out/vehicle_local_position
     type: px4_msgs::msg::VehicleLocalPosition
-    rate_limit: 50.
+    rate_limit: 20.
 
   - topic: /fmu/out/vehicle_odometry
     type: px4_msgs::msg::VehicleOdometry
-    rate_limit: 100.
+    rate_limit: 20.
 
   - topic: /fmu/out/vehicle_status
     type: px4_msgs::msg::VehicleStatus
@@ -106,7 +106,7 @@ publications:
 
   - topic: /fmu/out/airspeed_validated
     type: px4_msgs::msg::AirspeedValidated
-    rate_limit: 50.
+    rate_limit: 10.
 
   - topic: /fmu/out/vtol_vehicle_status
     type: px4_msgs::msg::VtolVehicleStatus
@@ -121,12 +121,23 @@ publications:
 
   - topic: /fmu/out/gimbal_device_attitude_status
     type: px4_msgs::msg::GimbalDeviceAttitudeStatus
-    rate_limit: 20.
+    rate_limit: 10.
   - topic: /fmu/out/vehicle_torque_setpoint
     type: px4_msgs::msg::VehicleTorqueSetpoint
 
   - topic: /fmu/out/vehicle_thrust_setpoint
     type: px4_msgs::msg::VehicleThrustSetpoint
+
+  # Mirror the in-firmware setpoint stream out to ROS for debugging /
+  # observation. This will reflect ALL writers of uORB trajectory_setpoint,
+  # including LosGuidance and any /fmu/in/trajectory_setpoint coming from ROS.
+  - topic: /fmu/out/trajectory_setpoint
+    type: px4_msgs::msg::TrajectorySetpoint
+    rate_limit: 10.
+
+  - topic: /fmu/out/offboard_control_mode
+    type: px4_msgs::msg::OffboardControlMode
+    rate_limit: 10.
 
 # Create uORB::Publication
 subscriptions:
