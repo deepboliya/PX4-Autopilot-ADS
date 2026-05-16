@@ -89,17 +89,17 @@ bool LosGuidance::compute_acceleration_command_ned(Vector3f &acceleration_ned) c
 	const float alpha = _latest_sample.alpha;   // yaw bearing  [rad], +right
 	const float beta  = _latest_sample.beta;    // pitch bearing [rad], +up
 
-	const float cos_a = cosf(alpha);
-	const float sin_a = sinf(alpha);
-	const float cos_b = cosf(beta);
-	const float sin_b = sinf(beta);
+
+	const float tan_a = tanf(alpha);
+	const float tan_b = tanf(beta);
 
 	// Target unit vector in the camera/gimbal frame (FRD-aligned with the
 	// gimbal):
 	//   X_g = forward, Y_g = right, Z_g = down.
 	// Yaw alpha rotates the forward axis toward +Y_g (right); pitch beta
 	// rotates the forward axis toward -Z_g (up).
-	const Vector3f los_gimbal{cos_a * cos_b, sin_a * cos_b, -sin_b};
+	const float denom = sqrt(1 + tan_a*tan_a + tan_b*tan_b);
+	const Vector3f los_gimbal{1/denom, tan_a/denom, tan_b/denom};
 
 	// Gimbal → body: Eulerf(phi, theta, psi) = (roll, pitch, yaw); roll fixed
 	// at 0. Pitch is LOS_GD_GIMB_PIT; yaw offset is LOS_GD_GIMB_YAW.
