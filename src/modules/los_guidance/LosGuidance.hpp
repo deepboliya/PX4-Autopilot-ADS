@@ -91,6 +91,9 @@ private:
 	hrt_abstime _last_publish_timestamp{0};
 	uint64_t _samples_received{0};
 	uint64_t _setpoints_published{0};
+	uint64_t _accel_compute_failures{0};
+	uint64_t _early_return_disabled{0};
+	uint64_t _early_return_no_fresh_los{0};
 
 	hrt_abstime _schedule_interval_us{1'000'000 / 50};
 
