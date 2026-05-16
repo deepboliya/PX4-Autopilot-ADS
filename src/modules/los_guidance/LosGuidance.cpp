@@ -89,6 +89,7 @@ bool LosGuidance::compute_acceleration_command_ned(Vector3f &acceleration_ned) c
 	const float alpha = _latest_sample.alpha;   // yaw bearing  [rad], +right
 	const float beta  = _latest_sample.beta;    // pitch bearing [rad], +up
 
+
 	const float tan_a = tanf(alpha);
 	const float tan_b = tanf(beta);
 
@@ -97,7 +98,8 @@ bool LosGuidance::compute_acceleration_command_ned(Vector3f &acceleration_ned) c
 	//   X_g = forward, Y_g = right, Z_g = down.
 	// Yaw alpha rotates the forward axis toward +Y_g (right); pitch beta
 	// rotates the forward axis toward -Z_g (up).
-	const Vector3f los_gimbal{1/sqrt(1 + tan_a*tan_a + tan_b*tan_b), tan_a/sqrt(1 + tan_a*tan_a + tan_b*tan_b), -tan_b/sqrt(1 + tan_a*tan_a + tan_b*tan_b)};
+	const float denom = sqrt(1 + tan_a*tan_a + tan_b*tan_b);
+	const Vector3f los_gimbal{1/denom, tan_a/denom, tan_b/denom};
 
 	// Gimbal → body: Eulerf(phi, theta, psi) = (roll, pitch, yaw); roll fixed
 	// at 0. Pitch is LOS_GD_GIMB_PIT; yaw offset is LOS_GD_GIMB_YAW.
@@ -196,6 +198,7 @@ void LosGuidance::Run()
 	}
 
 	if (!_param_los_gd_en.get()) {
+		++_early_return_disabled;
 		return;
 	}
 
@@ -206,12 +209,14 @@ void LosGuidance::Run()
 	if (!_has_sample || (now - _last_sample_timestamp) > timeout_us) {
 		// Stop publishing so commander can time out OFFBOARD if the
 		// bearings stop arriving; this is the documented failsafe hook.
+		++_early_return_no_fresh_los;
 		return;
 	}
 
 	Vector3f acceleration_ned;
 
 	if (!compute_acceleration_command_ned(acceleration_ned)) {
+		++_accel_compute_failures;
 		return;
 	}
 
@@ -249,8 +254,11 @@ int LosGuidance::print_status()
 		 (double)_param_los_gd_gimb_yaw.get(),
 		 (int)_param_los_gd_pub_hz.get());
 
-	PX4_INFO("rx=%" PRIu64 " tx=%" PRIu64 " has_sample=%d has_attitude=%d",
-		 _samples_received, _setpoints_published,
+	PX4_INFO("rx=%" PRIu64 " tx=%" PRIu64 " accel_compute_fail=%" PRIu64
+		 " early_disabled=%" PRIu64 " early_no_fresh_los=%" PRIu64
+		 " has_sample=%d has_attitude=%d",
+		 _samples_received, _setpoints_published, _accel_compute_failures,
+		 _early_return_disabled, _early_return_no_fresh_los,
 		 (int)_has_sample, (int)_has_attitude);
 
 	if (_has_sample) {

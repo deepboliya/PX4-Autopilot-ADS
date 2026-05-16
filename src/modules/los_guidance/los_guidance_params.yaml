@@ -15,7 +15,7 @@ parameters:
           Disable to silence the internal publisher and hand the OFFBOARD
           slot back to external MAVLink/uXRCE-DDS sources.
       type: boolean
-      default: 0
+      default: 1
 
     LOS_GD_ACC_MAX:
       description:
@@ -43,7 +43,7 @@ parameters:
           rotation in FRD: positive values rotate the optical axis from
           forward toward down (camera tilted down).
       type: float
-      default: 0.0
+      default: -1.082
       min: -1.5708
       max: 1.5708
       unit: rad
