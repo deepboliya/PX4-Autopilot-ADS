@@ -43,7 +43,7 @@ parameters:
           rotation in FRD: positive values rotate the optical axis from
           forward toward down (camera tilted down).
       type: float
-      default: -1.082
+      default: 1.082
       min: -1.5708
       max: 1.5708
       unit: rad
@@ -59,7 +59,7 @@ parameters:
           in the matrix::Euler convention used by los_guidance. The previous
           hard-coded offset was π/2 radians; default keeps that behavior.
       type: float
-      default: 1.5708
+      default: -1.5708
       min: -3.14159
       max: 3.14159
       unit: rad
