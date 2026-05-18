@@ -1,5 +1,0 @@
-menuconfig MODULES_LOS_GUIDANCE_TARGET_TRACKING
-	bool "los_guidance_target_tracking"
-	default n
-	---help---
-		Line of sight guidance and target tracking module. Uses LosMeasurements to control yaw and a servo.
