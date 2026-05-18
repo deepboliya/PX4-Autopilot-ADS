@@ -220,7 +220,7 @@ void LosGuidance::update_tracking_controllers(float dt)
 
 	// Anti-windup mirror of the yaw branch: if we just clipped the pitch
 	// command, undo the last integral step so it can't keep growing.
-	if (pitch_raw != pitch_cmd) {
+	if (pitch_raw < pitch_min || pitch_raw > pitch_max) {
 		_beta_integral -= beta * dt;
 	}
 

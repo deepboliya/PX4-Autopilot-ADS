@@ -112,28 +112,30 @@ parameters:
       description:
         short: Integral gain on alpha (bearing) -> vehicle yaw rate
         long: |
-          PI-controller I term. Removes steady-state bearing offset when
-          the target is moving laterally. Bounded by LOS_GD_YAW_IM.
+          PI-controller I term (units: 1/s^2; PX4 unit whitelist has no
+          rad*s/rad^-1 entries so this field is left blank). Removes
+          steady-state bearing offset when the target is moving laterally.
+          Bounded by LOS_GD_YAW_IM.
       type: float
       default: 0.2
       min: 0.0
       max: 10.0
       decimal: 3
-      unit: 1/s^2
 
     LOS_GD_YAW_IM:
       description:
         short: Anti-windup clamp on the alpha integrator
         long: |
-          Absolute bound on the alpha integral state (rad*s). Combined
-          with conditional integration this prevents the I term from
-          dominating after sustained saturation of the yaw-rate output.
+          Absolute bound on the alpha integral state (physical units:
+          rad*s; left unitless because that combination is not on PX4's
+          allowed-units whitelist). Combined with conditional integration
+          this prevents the I term from dominating after sustained
+          saturation of the yaw-rate output.
       type: float
       default: 0.5
       min: 0.0
       max: 5.0
       decimal: 3
-      unit: rad*s
 
     LOS_GD_YR_MAX:
       description:
@@ -169,15 +171,15 @@ parameters:
       description:
         short: Anti-windup clamp on the beta integrator
         long: |
-          Absolute bound on the beta integral state (rad*s). Pairs with
-          conditional integration when the camera pitch command hits
-          LOS_GD_PIT_MIN / LOS_GD_PIT_MAX.
+          Absolute bound on the beta integral state (physical units:
+          rad*s; unitless here because that combination is not on PX4's
+          allowed-units whitelist). Pairs with conditional integration
+          when the camera pitch command hits LOS_GD_PIT_MIN / LOS_GD_PIT_MAX.
       type: float
       default: 1.0
       min: 0.0
       max: 5.0
       decimal: 3
-      unit: rad*s
 
     LOS_GD_PIT_MIN:
       description:
