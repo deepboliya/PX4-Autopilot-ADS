@@ -92,3 +92,137 @@ parameters:
       min: 10
       max: 250
       unit: Hz
+
+    LOS_GD_YAW_KP:
+      description:
+        short: Proportional gain on alpha (bearing) -> vehicle yaw rate
+        long: |
+          PI-controller P term. alpha is +right; output drives
+          trajectory_setpoint.yawspeed (+right in FRD). Increase to make
+          the airframe yaw harder toward the target, but watch for
+          oscillation against the MC_YAWRATE / yawrate-FF tuning.
+      type: float
+      default: 1.5
+      min: 0.0
+      max: 10.0
+      decimal: 3
+      unit: 1/s
+
+    LOS_GD_YAW_KI:
+      description:
+        short: Integral gain on alpha (bearing) -> vehicle yaw rate
+        long: |
+          PI-controller I term. Removes steady-state bearing offset when
+          the target is moving laterally. Bounded by LOS_GD_YAW_IM.
+      type: float
+      default: 0.2
+      min: 0.0
+      max: 10.0
+      decimal: 3
+      unit: 1/s^2
+
+    LOS_GD_YAW_IM:
+      description:
+        short: Anti-windup clamp on the alpha integrator
+        long: |
+          Absolute bound on the alpha integral state (rad*s). Combined
+          with conditional integration this prevents the I term from
+          dominating after sustained saturation of the yaw-rate output.
+      type: float
+      default: 0.5
+      min: 0.0
+      max: 5.0
+      decimal: 3
+      unit: rad*s
+
+    LOS_GD_YR_MAX:
+      description:
+        short: Maximum |yaw rate| output of the alpha PI controller
+        long: |
+          Final saturation on trajectory_setpoint.yawspeed. Keep this at
+          or below MC_YAWRATE_MAX (and MPC_MAN_Y_MAX for stick scaling)
+          so the lower attitude/rate stack does not silently clip the
+          setpoint before it reaches the motors.
+      type: float
+      default: 1.0
+      min: 0.05
+      max: 6.28
+      decimal: 3
+      unit: rad/s
+
+    LOS_GD_PIT_KI:
+      description:
+        short: Integral gain on beta (bearing) -> camera-servo pitch
+        long: |
+          I-only controller; output is camera pitch in body-Y FRD radians
+          (positive = optical axis tilts down). Bounded by LOS_GD_PIT_IM.
+          Sign is fixed in code so a positive gain drives the camera to
+          follow the target vertically (beta>0 tilts camera up).
+      type: float
+      default: 1.0
+      min: 0.0
+      max: 10.0
+      decimal: 3
+      unit: 1/s
+
+    LOS_GD_PIT_IM:
+      description:
+        short: Anti-windup clamp on the beta integrator
+        long: |
+          Absolute bound on the beta integral state (rad*s). Pairs with
+          conditional integration when the camera pitch command hits
+          LOS_GD_PIT_MIN / LOS_GD_PIT_MAX.
+      type: float
+      default: 1.0
+      min: 0.0
+      max: 5.0
+      decimal: 3
+      unit: rad*s
+
+    LOS_GD_PIT_MIN:
+      description:
+        short: Minimum commanded camera pitch (mechanical low stop)
+        long: |
+          Soft lower limit (rad, FRD body Y, +down) applied to the
+          camera-servo command. Set to the most negative angle the
+          physical servo + mount can reach.
+      type: float
+      default: -1.0
+      min: -1.5708
+      max: 0.0
+      decimal: 3
+      unit: rad
+
+    LOS_GD_PIT_MAX:
+      description:
+        short: Maximum commanded camera pitch (mechanical high stop)
+        long: |
+          Soft upper limit (rad, FRD body Y, +down) applied to the
+          camera-servo command. Set to the most positive angle the
+          physical servo + mount can reach.
+      type: float
+      default: 1.0
+      min: 0.0
+      max: 1.5708
+      decimal: 3
+      unit: rad
+
+    LOS_GD_PIT_HRG:
+      description:
+        short: Half-range mapping camera pitch (rad) -> normalized [-1,1]
+        long: |
+          The gimbal_controls output is normalized: the published
+          control[INDEX_PITCH] = (pitch_cmd - LOS_GD_GIMB_PIT) /
+          LOS_GD_PIT_HRG, clamped to [-1,1]. Set this to the angular
+          excursion that should map to PWM_MAIN_MAX5 vs PWM_MAIN_MIN5.
+          REQUIRED PX4 SIDE: set PWM_MAIN_FUNC5 = 421 (Gimbal_Pitch),
+          set PWM_MAIN_MIN5 / PWM_MAIN_MAX5 / PWM_MAIN_DIS5 to the
+          servo's mechanical range, and set MNT_MODE_OUT = Disabled so
+          the gimbal driver does not contend on the gimbal_controls
+          topic.
+      type: float
+      default: 1.0
+      min: 0.01
+      max: 3.14159
+      decimal: 3
+      unit: rad

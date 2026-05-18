@@ -36,6 +36,8 @@
 #include <inttypes.h>
 #include <math.h>
 
+#include <mathlib/mathlib.h>
+
 using matrix::Eulerf;
 using matrix::Quatf;
 using matrix::Vector3f;
@@ -47,6 +49,10 @@ LosGuidance::LosGuidance() :
 	ScheduledWorkItem(MODULE_NAME, px4::wq_configurations::lp_default)
 {
 	parameters_updated();
+	// Seat the camera-pitch latch at the fixed gimbal pitch param so the
+	// LOS-to-body transform stays consistent before the first tracking
+	// tick runs (and so the servo idles at a sane neutral).
+	_camera_pitch_cmd = _param_los_gd_gimb_pit.get();
 }
 
 bool LosGuidance::init()
@@ -102,9 +108,11 @@ bool LosGuidance::compute_acceleration_command_ned(Vector3f &acceleration_ned) c
 	const Vector3f los_gimbal{cos_a * cos_b, sin_a * cos_b, -sin_b};
 
 	// Gimbal → body: Eulerf(phi, theta, psi) = (roll, pitch, yaw); roll fixed
-	// at 0. Pitch is LOS_GD_GIMB_PIT; yaw offset is LOS_GD_GIMB_YAW.
+	// at 0. Pitch uses the live tracking-controller output `_camera_pitch_cmd`
+	// (the servo is assumed to follow the command faithfully within one tick);
+	// yaw offset is the static gimbal mount offset LOS_GD_GIMB_YAW.
 	const Quatf q_body_from_gimbal(
-		Eulerf(0.f, _param_los_gd_gimb_pit.get(), _param_los_gd_gimb_yaw.get()));
+		Eulerf(0.f, _camera_pitch_cmd, _param_los_gd_gimb_yaw.get()));
 	const Vector3f los_body = q_body_from_gimbal.rotateVector(los_gimbal);
 
 	// vehicle_attitude.q rotates body-frame vectors to NED, exactly what we
@@ -154,11 +162,115 @@ void LosGuidance::publish_offboard_setpoint(const Vector3f &acceleration_ned)
 	sp.jerk[1] = NAN;
 	sp.jerk[2] = NAN;
 	sp.yaw = NAN;
-	sp.yawspeed = NAN;
+	// Feedforward yaw rate from the alpha PI controller. mc_pos_control
+	// passes this through to the attitude/rate stack as a yawspeed setpoint
+	// while sp.yaw=NAN (free heading). NOTE for the operator: make sure
+	// MPC_MAN_Y_MAX / MC_YAWRATE_MAX are at least as large as LOS_GD_YR_MAX,
+	// otherwise the rate setpoint will be clipped by the lower stack before
+	// it reaches the motors.
+	sp.yawspeed = _yaw_rate_cmd;
 	_trajectory_setpoint_pub.publish(sp);
 
 	_last_publish_timestamp = now;
 	++_setpoints_published;
+}
+
+void LosGuidance::update_tracking_controllers(float dt)
+{
+	if (!_has_sample || dt <= 0.f || !PX4_ISFINITE(dt)) {
+		return;
+	}
+
+	const float alpha = _latest_sample.alpha;   // +right
+	const float beta  = _latest_sample.beta;    // +up
+
+	// ---- PI on alpha → vehicle yaw rate ----------------------------------
+	// Error convention: setpoint=0 (target on optical axis), error = alpha.
+	// alpha>0 means target to the right; we want positive yawspeed in FRD
+	// (yaw right) so both Kp and Ki signs are positive here.
+	_alpha_integral += alpha * dt;
+	const float yaw_im = fabsf(_param_los_gd_yaw_im.get());
+	_alpha_integral = math::constrain(_alpha_integral, -yaw_im, yaw_im);
+
+	const float yawrate_raw = _param_los_gd_yaw_kp.get() * alpha
+				+ _param_los_gd_yaw_ki.get() * _alpha_integral;
+	const float yr_max = fabsf(_param_los_gd_yr_max.get());
+	_yaw_rate_cmd = math::constrain(yawrate_raw, -yr_max, yr_max);
+
+	// Conditional integration: if the output is saturated AND the current
+	// error would push it further into saturation, peel back the most recent
+	// integral step to avoid wind-up.
+	if (fabsf(yawrate_raw) > yr_max && (alpha * yawrate_raw) > 0.f) {
+		_alpha_integral -= alpha * dt;
+	}
+
+	// ---- I-only on beta → camera-servo pitch -----------------------------
+	// beta>0 means target above optical axis; tilting the camera UP in FRD
+	// requires DECREASING pitch (LOS_GD_GIMB_PIT is +down). Hence the minus
+	// sign on the integral term — with a positive LOS_GD_PIT_KI gain.
+	_beta_integral += beta * dt;
+	const float pit_im = fabsf(_param_los_gd_pit_im.get());
+	_beta_integral = math::constrain(_beta_integral, -pit_im, pit_im);
+
+	const float pitch_min = _param_los_gd_pit_min.get();
+	const float pitch_max = _param_los_gd_pit_max.get();
+	const float pitch_raw = _param_los_gd_gimb_pit.get()
+			      - _param_los_gd_pit_ki.get() * _beta_integral;
+	const float pitch_cmd = math::constrain(pitch_raw, pitch_min, pitch_max);
+
+	// Anti-windup mirror of the yaw branch: if we just clipped the pitch
+	// command, undo the last integral step so it can't keep growing.
+	if (pitch_raw != pitch_cmd) {
+		_beta_integral -= beta * dt;
+	}
+
+	_camera_pitch_cmd = pitch_cmd;
+}
+
+void LosGuidance::publish_camera_pitch()
+{
+	// We publish on `gimbal_controls` and let mixer_module's FunctionGimbal
+	// route it to whatever PWM channel is mapped to Gimbal_Pitch (output
+	// function 421).
+	//
+	// REQUIRED PX4 configuration on this airframe (Pixhawk 6C, FMU MAIN 1..4
+	// = motors, MAIN 5 = camera servo signal):
+	//
+	//   PWM_MAIN_FUNC1..4 = Motor 1..4         (function 101..104, default for quad)
+	//   PWM_MAIN_FUNC5    = Gimbal_Pitch       (function 421)
+	//   PWM_MAIN_MIN5  / PWM_MAIN_MAX5 / PWM_MAIN_DIS5
+	//                     = servo's mechanical PWM range / disarmed value
+	//   MNT_MODE_OUT      = Disabled           (so the gimbal module does not
+	//                                           also publish gimbal_controls and
+	//                                           fight this module on the topic)
+	//
+	// We send NaN on roll/yaw so any channel mistakenly mapped to those
+	// gimbal axes is held in the "disarmed" state by FunctionGimbal.
+	gimbal_controls_s msg{};
+	msg.timestamp = hrt_absolute_time();
+
+	const float half_range = fabsf(_param_los_gd_pit_hrg.get());
+	const float center = _param_los_gd_gimb_pit.get();
+	float normalized = NAN;
+
+	if (half_range > 1e-4f && PX4_ISFINITE(_camera_pitch_cmd)) {
+		normalized = (_camera_pitch_cmd - center) / half_range;
+		normalized = math::constrain(normalized, -1.f, 1.f);
+	}
+
+	msg.control[gimbal_controls_s::INDEX_ROLL]  = NAN;
+	msg.control[gimbal_controls_s::INDEX_PITCH] = normalized;
+	msg.control[gimbal_controls_s::INDEX_YAW]   = NAN;
+	_gimbal_controls_pub.publish(msg);
+}
+
+void LosGuidance::reset_tracking_controllers()
+{
+	_alpha_integral = 0.f;
+	_beta_integral = 0.f;
+	_yaw_rate_cmd = 0.f;
+	_camera_pitch_cmd = _param_los_gd_gimb_pit.get();
+	_last_control_timestamp = 0;
 }
 
 void LosGuidance::Run()
@@ -206,10 +318,25 @@ void LosGuidance::Run()
 		static_cast<hrt_abstime>(_param_los_gd_timeout_ms.get()) * 1000ULL;
 
 	if (!_has_sample || (now - _last_sample_timestamp) > timeout_us) {
-		// Stop publishing so commander can time out OFFBOARD if the
-		// bearings stop arriving; this is the documented failsafe hook.
+		// Bearings stale: stop publishing OFFBOARD so commander can run
+		// its timeout failsafe, AND zero the tracking controllers so the
+		// integrators don't accumulate while we're blind.
+		reset_tracking_controllers();
 		return;
 	}
+
+	// dt for the integrators is the wall time since the last control tick,
+	// not since the last sample — this way the schedule rate (LOS_GD_PUB_HZ)
+	// determines integration cadence even if samples arrive faster/slower.
+	float dt = 0.f;
+
+	if (_last_control_timestamp != 0) {
+		dt = static_cast<float>(now - _last_control_timestamp) * 1e-6f;
+	}
+
+	_last_control_timestamp = now;
+
+	update_tracking_controllers(dt);
 
 	Vector3f acceleration_ned;
 
@@ -218,6 +345,7 @@ void LosGuidance::Run()
 	}
 
 	publish_offboard_setpoint(acceleration_ned);
+	publish_camera_pitch();
 }
 
 int LosGuidance::task_spawn(int argc, char *argv[])
@@ -263,6 +391,12 @@ int LosGuidance::print_status()
 			 (double)_latest_sample.beta_rate,
 			 (uint64_t)(hrt_absolute_time() - _last_sample_timestamp));
 	}
+
+	PX4_INFO("track: yawrate_cmd=%.3f rad/s pitch_cmd=%.3f rad alpha_i=%.3f beta_i=%.3f",
+		 (double)_yaw_rate_cmd,
+		 (double)_camera_pitch_cmd,
+		 (double)_alpha_integral,
+		 (double)_beta_integral);
 
 	return 0;
 }

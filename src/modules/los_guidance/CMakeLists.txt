@@ -40,5 +40,6 @@ px4_add_module(
 	MODULE_CONFIG
 		los_guidance_params.yaml
 	DEPENDS
+		mathlib
 		px4_work_queue
 )
