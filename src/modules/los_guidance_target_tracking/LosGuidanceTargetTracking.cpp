@@ -18,6 +18,13 @@ LosGuidanceTargetTracking::LosGuidanceTargetTracking() :
 
 bool LosGuidanceTargetTracking::init()
 {
+	// Register callbacks on BOTH subscriptions so either transport wakes
+	// the work item.  UART path is preferred in Run() (see below).
+	if (!_los_sensor_sub.registerCallback()) {
+		PX4_ERR("los_sensor callback registration failed");
+		return false;
+	}
+
 	if (!_los_measurements_sub.registerCallback()) {
 		PX4_ERR("los_measurements callback registration failed");
 		return false;
@@ -34,6 +41,7 @@ void LosGuidanceTargetTracking::parameters_updated()
 void LosGuidanceTargetTracking::Run()
 {
 	if (should_exit()) {
+		_los_sensor_sub.unregisterCallback();
 		_los_measurements_sub.unregisterCallback();
 		ScheduleClear();
 		exit_and_cleanup(desc);
@@ -55,52 +63,9 @@ void LosGuidanceTargetTracking::Run()
 	los_measurements_s los_meas;
 	los_sensor_s los_sensor_meas;
 
-	if (_los_measurements_sub.update(&los_meas)) {
-		_latest_sample = los_meas;
-		_has_sample = true;
-		_last_sample_timestamp = los_meas.timestamp;
-
-		// Control yaw to reduce alpha using a proportional controller
-		vehicle_rates_setpoint_s rates_sp{};
-		rates_sp.timestamp = hrt_absolute_time();
-		rates_sp.roll = 0.0f;
-		rates_sp.pitch = 0.0f;
-		// If alpha is positive, target is to the right, we turn right (positive yaw rate)
-		rates_sp.yaw = los_meas.alpha * 1.5f; 
-		_rates_sp_pub.publish(rates_sp);
-
-		// Control servo angle using PWM to reduce beta
-		vehicle_command_s vehicle_cmd{};
-		vehicle_cmd.timestamp = hrt_absolute_time();
-		vehicle_cmd.command = vehicle_command_s::VEHICLE_CMD_DO_SET_ACTUATOR;
-		
-		vehicle_cmd.param1 = NAN;
-		vehicle_cmd.param2 = NAN;
-		vehicle_cmd.param3 = NAN;
-		vehicle_cmd.param4 = NAN;
-		
-		float servo_val = los_meas.beta * 0.5f; 
-		if (servo_val > 1.0f) servo_val = 1.0f;
-		if (servo_val < -1.0f) servo_val = -1.0f;
-		
-		vehicle_cmd.param5 = servo_val; // Command servo on channel 5
-		vehicle_cmd.param6 = NAN;
-		vehicle_cmd.param7 = 0; // Index 0 (controls actuators 1-6)
-		
-		vehicle_cmd.target_system = 1;
-		vehicle_cmd.target_component = 1;
-		vehicle_cmd.source_system = 1;
-		vehicle_cmd.source_component = 1;
-		vehicle_cmd.from_external = false;
-		
-		_vehicle_command_pub.publish(vehicle_cmd);
-
-		Vector3f acceleration_ned;
-		if (compute_acceleration_command_ned(acceleration_ned)) {
-			publish_offboard_setpoint(acceleration_ned);
-		}
-	}
-	else if (_los_sensor_sub.update(&los_sensor_meas)) {
+	// UART path is primary.  DDS path is fallback so the controller keeps
+	// working if the UART driver or the Jetson sender goes silent.
+	if (_los_sensor_sub.update(&los_sensor_meas)) {
 		_latest_sample.alpha = los_sensor_meas.azimuth;
 		_latest_sample.beta = los_sensor_meas.elevation;
 		_has_sample = true;
@@ -111,33 +76,78 @@ void LosGuidanceTargetTracking::Run()
 		rates_sp.timestamp = hrt_absolute_time();
 		rates_sp.roll = 0.0f;
 		rates_sp.pitch = 0.0f;
-		rates_sp.yaw = los_sensor_meas.azimuth * 1.5f; 
+		rates_sp.yaw = los_sensor_meas.azimuth * 1.5f;
 		_rates_sp_pub.publish(rates_sp);
 
 		// Control servo angle using PWM to reduce beta
 		vehicle_command_s vehicle_cmd{};
 		vehicle_cmd.timestamp = hrt_absolute_time();
 		vehicle_cmd.command = vehicle_command_s::VEHICLE_CMD_DO_SET_ACTUATOR;
-		
+
 		vehicle_cmd.param1 = NAN;
 		vehicle_cmd.param2 = NAN;
 		vehicle_cmd.param3 = NAN;
 		vehicle_cmd.param4 = NAN;
-		
-		float servo_val = los_sensor_meas.elevation * 0.5f; 
+
+		float servo_val = los_sensor_meas.elevation * 0.5f;
 		if (servo_val > 1.0f) servo_val = 1.0f;
 		if (servo_val < -1.0f) servo_val = -1.0f;
-		
+
 		vehicle_cmd.param5 = servo_val; // Command servo on channel 5
 		vehicle_cmd.param6 = NAN;
 		vehicle_cmd.param7 = 0; // Index 0 (controls actuators 1-6)
-		
+
 		vehicle_cmd.target_system = 1;
 		vehicle_cmd.target_component = 1;
 		vehicle_cmd.source_system = 1;
 		vehicle_cmd.source_component = 1;
 		vehicle_cmd.from_external = false;
-		
+
+		_vehicle_command_pub.publish(vehicle_cmd);
+
+		Vector3f acceleration_ned;
+		if (compute_acceleration_command_ned(acceleration_ned)) {
+			publish_offboard_setpoint(acceleration_ned);
+		}
+	}
+	else if (_los_measurements_sub.update(&los_meas)) {
+		_latest_sample = los_meas;
+		_has_sample = true;
+		_last_sample_timestamp = los_meas.timestamp;
+
+		// Control yaw to reduce alpha using a proportional controller
+		vehicle_rates_setpoint_s rates_sp{};
+		rates_sp.timestamp = hrt_absolute_time();
+		rates_sp.roll = 0.0f;
+		rates_sp.pitch = 0.0f;
+		// If alpha is positive, target is to the right, we turn right (positive yaw rate)
+		rates_sp.yaw = los_meas.alpha * 1.5f;
+		_rates_sp_pub.publish(rates_sp);
+
+		// Control servo angle using PWM to reduce beta
+		vehicle_command_s vehicle_cmd{};
+		vehicle_cmd.timestamp = hrt_absolute_time();
+		vehicle_cmd.command = vehicle_command_s::VEHICLE_CMD_DO_SET_ACTUATOR;
+
+		vehicle_cmd.param1 = NAN;
+		vehicle_cmd.param2 = NAN;
+		vehicle_cmd.param3 = NAN;
+		vehicle_cmd.param4 = NAN;
+
+		float servo_val = los_meas.beta * 0.5f;
+		if (servo_val > 1.0f) servo_val = 1.0f;
+		if (servo_val < -1.0f) servo_val = -1.0f;
+
+		vehicle_cmd.param5 = servo_val; // Command servo on channel 5
+		vehicle_cmd.param6 = NAN;
+		vehicle_cmd.param7 = 0; // Index 0 (controls actuators 1-6)
+
+		vehicle_cmd.target_system = 1;
+		vehicle_cmd.target_component = 1;
+		vehicle_cmd.source_system = 1;
+		vehicle_cmd.source_component = 1;
+		vehicle_cmd.from_external = false;
+
 		_vehicle_command_pub.publish(vehicle_cmd);
 
 		Vector3f acceleration_ned;

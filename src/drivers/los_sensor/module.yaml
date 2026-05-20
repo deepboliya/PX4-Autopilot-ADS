@@ -1,0 +1,8 @@
+module_name: LOS Sensor Driver
+
+serial_config:
+    - command: |
+        los_sensor_driver start -d ${SERIAL_DEV} -b 921600
+      port_config_param:
+        name: LOS_PORT_CONFIG
+        group: Sensors

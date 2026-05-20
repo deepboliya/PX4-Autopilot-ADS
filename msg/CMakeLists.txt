@@ -131,6 +131,7 @@ set(msg_files
 	LandingTargetPose.msg
 	LaunchDetectionStatus.msg
 	LedControl.msg
+	LosDiagnostics.msg
 	LosMeasurements.msg
 	LosSensor.msg
 	LoggerStatus.msg
