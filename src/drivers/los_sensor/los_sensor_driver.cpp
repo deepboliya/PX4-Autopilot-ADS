@@ -341,6 +341,32 @@ void LOSSensorDriver::Run()
 			}
 			_last_converted_timestamp = (uint64_t)converted_timestamp_us;
 
+			// --- End-to-end latency (inference start on Jetson -> PX4 RX, in PX4 hrt µs) ---
+			//
+			//   total = (T4 - T3 - offset) + L_j  =  px4_side_overhead + jetson_side_latency
+			//
+			// Only meaningful once the clock offset is initialised; pre-sync we report
+			// just the Jetson half so the field is never garbage.
+			uint32_t total_latency_us;
+
+			if (_offset_initialized) {
+				const int64_t px4_overhead =
+					(int64_t)T4
+					- (int64_t)frame.jetson_capture_time_us
+					- (int64_t)_filtered_offset_us;
+
+				// Clamp negative values caused by offset jitter (should never be
+				// more than a few µs negative in a settled link; treat as 0).
+				const int64_t overhead_clamped = (px4_overhead < 0) ? 0 : px4_overhead;
+
+				const uint64_t total =
+					(uint64_t)overhead_clamped + (uint64_t)frame.jetson_latency_us;
+
+				total_latency_us = (total > UINT32_MAX) ? UINT32_MAX : (uint32_t)total;
+			} else {
+				total_latency_us = (uint32_t)frame.jetson_latency_us;
+			}
+
 			// --- Publish the uORB sample ---
 			los_sensor_s msg{};
 			msg.timestamp          = (uint64_t)converted_timestamp_us;
@@ -356,7 +382,21 @@ void LOSSensorDriver::Run()
 			msg.elevation_rate_var = frame.elevation_rate_var;
 			msg.quality            = frame.quality;
 			msg.status_flags       = frame.status_flags;
+			msg.jetson_latency_us  = (uint32_t)frame.jetson_latency_us;
+			msg.total_latency_us   = total_latency_us;
 			_pub.publish(msg);
+
+			// Track per-1s-window latency min/avg/max for the DIAG line.
+			const uint32_t lat = (uint32_t)frame.jetson_latency_us;
+			if (lat < _lat_min_us) { _lat_min_us = lat; }
+			if (lat > _lat_max_us) { _lat_max_us = lat; }
+			_lat_sum_us += lat;
+			_lat_count++;
+
+			// Mirror the aggregate for end-to-end latency.
+			if (total_latency_us < _tot_min_us) { _tot_min_us = total_latency_us; }
+			if (total_latency_us > _tot_max_us) { _tot_max_us = total_latency_us; }
+			_tot_sum_us += total_latency_us;
 
 			_total_frames++;
 			_last_frame_time = hrt_absolute_time();
@@ -377,12 +417,36 @@ void LOSSensorDriver::Run()
 
 		_last_diag_pub = hrt_absolute_time();
 
-		PX4_INFO("DIAG frames=%lu crc=%lu loss=%lu stale=%u sync=%u",
+		// Compute averages for the (short) DIAG print.  Min/max are still
+		// tracked in _lat_min_us / _lat_max_us / _tot_min_us / _tot_max_us
+		// so they can be exposed via uORB later without re-instrumenting.
+		const uint32_t lat_avg_print = (_lat_count > 0)
+			? (uint32_t)(_lat_sum_us / _lat_count)
+			: 0;
+		const uint32_t tot_avg_print = (_lat_count > 0)
+			? (uint32_t)(_tot_sum_us / _lat_count)
+			: 0;
+
+		PX4_INFO("DIAG frames=%lu crc=%lu loss=%lu stale=%u sync=%u "
+			 "lat_j_avg=%lu us lat_tot_avg=%lu us n=%lu",
 			 (unsigned long)diag.total_frames,
 			 (unsigned long)diag.crc_errors,
 			 (unsigned long)diag.packet_loss,
 			 (unsigned)diag.stale,
-			 (unsigned)diag.sync_valid);
+			 (unsigned)diag.sync_valid,
+			 (unsigned long)lat_avg_print,
+			 (unsigned long)tot_avg_print,
+			 (unsigned long)_lat_count);
+
+		// Reset aggregates for the next 1s window.
+		_lat_min_us = UINT32_MAX;
+		_lat_max_us = 0;
+		_lat_sum_us = 0;
+		_lat_count  = 0;
+
+		_tot_min_us = UINT32_MAX;
+		_tot_max_us = 0;
+		_tot_sum_us = 0;
 	}
 }
 

@@ -62,12 +62,14 @@ struct LOSFrame
 	uint64_t t_sync_jetson_us;       // T2: Jetson clock at last sync RX
 	uint64_t jetson_capture_time_us; // T3: Jetson clock at frame build
 
+	uint16_t jetson_latency_us;      // Jetson cap.read() to link.send() latency, clamped to [0, 65535] us
+
 	uint32_t crc32;                  // poly 0xEDB88320, init 0xFFFFFFFF, final XOR ~
 };
 
 #pragma pack(pop)
 
-static constexpr size_t LOS_FRAME_SIZE = 58;
+static constexpr size_t LOS_FRAME_SIZE = 60;
 static_assert(sizeof(LOSFrame) == LOS_FRAME_SIZE, "LOSFrame size mismatch");
 static_assert(sizeof(SyncPacket) == 12, "SyncPacket size mismatch");
 
@@ -135,6 +137,17 @@ private:
 	uint32_t _crc_error_count{0};
 	uint32_t _packet_loss{0};
 	hrt_abstime _last_diag_pub{0};
+
+	// Per-1s-window Jetson latency aggregates (reset each DIAG period).
+	uint32_t _lat_min_us{UINT32_MAX};
+	uint32_t _lat_max_us{0};
+	uint64_t _lat_sum_us{0};
+	uint32_t _lat_count{0};
+
+	// Per-1s-window end-to-end latency aggregates (shares _lat_count).
+	uint32_t _tot_min_us{UINT32_MAX};
+	uint32_t _tot_max_us{0};
+	uint64_t _tot_sum_us{0};
 
 	perf_counter_t _crc_errors      = perf_alloc(PC_COUNT, "los_crc_errors");
 	perf_counter_t _frames_ok       = perf_alloc(PC_COUNT, "los_frames_ok");
