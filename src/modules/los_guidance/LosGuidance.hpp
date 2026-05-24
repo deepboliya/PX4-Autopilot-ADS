@@ -49,6 +49,7 @@
 #include <uORB/topics/parameter_update.h>
 #include <uORB/topics/trajectory_setpoint.h>
 #include <uORB/topics/vehicle_attitude.h>
+#include <uORB/topics/vehicle_local_position.h>
 
 using namespace time_literals;
 
@@ -73,9 +74,11 @@ private:
 	void parameters_updated();
 	bool compute_acceleration_command_ned(matrix::Vector3f &acceleration_ned) const;
 	void publish_offboard_setpoint(const matrix::Vector3f &acceleration_ned);
+	void publish_hold_setpoint();
 
 	uORB::SubscriptionCallbackWorkItem _los_measurements_sub{this, ORB_ID(los_measurements)};
 	uORB::Subscription _vehicle_attitude_sub{ORB_ID(vehicle_attitude)};
+	uORB::Subscription _vehicle_local_position_sub{ORB_ID(vehicle_local_position)};
 	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
 
 	uORB::Publication<offboard_control_mode_s> _offboard_control_mode_pub{ORB_ID(offboard_control_mode)};
@@ -88,9 +91,13 @@ private:
 	matrix::Quatf _q_attitude{1.f, 0.f, 0.f, 0.f};
 	bool _has_attitude{false};
 
+	matrix::Vector3f _latched_position_ned{0.f, 0.f, 0.f};
+	bool _has_latched_position{false};
+
 	hrt_abstime _last_publish_timestamp{0};
 	uint64_t _samples_received{0};
 	uint64_t _setpoints_published{0};
+	uint64_t _hold_setpoints_published{0};
 	uint64_t _accel_compute_failures{0};
 	uint64_t _early_return_disabled{0};
 	uint64_t _early_return_no_fresh_los{0};

@@ -161,6 +161,46 @@ void LosGuidance::publish_offboard_setpoint(const Vector3f &acceleration_ned)
 	++_setpoints_published;
 }
 
+void LosGuidance::publish_hold_setpoint()
+{
+	const hrt_abstime now = hrt_absolute_time();
+
+	// Position-only mode: position is authoritative, velocity travels as
+	// feedforward through trajectory_setpoint. Do NOT flip ocm.velocity
+	// here or commander will treat this as a velocity command.
+	offboard_control_mode_s ocm{};
+	ocm.timestamp = now;
+	ocm.position = true;
+	ocm.velocity = false;
+	ocm.acceleration = false;
+	ocm.attitude = false;
+	ocm.body_rate = false;
+	ocm.thrust_and_torque = false;
+	ocm.direct_actuator = false;
+	_offboard_control_mode_pub.publish(ocm);
+
+	trajectory_setpoint_s sp{};
+	sp.timestamp = now;
+	sp.position[0] = _latched_position_ned(0);
+	sp.position[1] = _latched_position_ned(1);
+	sp.position[2] = _latched_position_ned(2);
+	sp.velocity[0] = 0.f;
+	sp.velocity[1] = 0.f;
+	sp.velocity[2] = 0.f;
+	sp.acceleration[0] = NAN;
+	sp.acceleration[1] = NAN;
+	sp.acceleration[2] = NAN;
+	sp.jerk[0] = NAN;
+	sp.jerk[1] = NAN;
+	sp.jerk[2] = NAN;
+	sp.yaw = NAN;
+	sp.yawspeed = NAN;
+	_trajectory_setpoint_pub.publish(sp);
+
+	_last_publish_timestamp = now;
+	++_hold_setpoints_published;
+}
+
 void LosGuidance::Run()
 {
 	if (should_exit()) {
@@ -179,6 +219,7 @@ void LosGuidance::Run()
 	// Drain bearing samples (zero-copy via copy() into the latched
 	// _latest_sample), keeping only the freshest one for this cycle.
 	los_measurements_s los;
+	bool got_fresh_sample = false;
 
 	while (_los_measurements_sub.updated()) {
 		if (_los_measurements_sub.copy(&los)) {
@@ -186,6 +227,7 @@ void LosGuidance::Run()
 			_has_sample = true;
 			_last_sample_timestamp = los.timestamp;
 			++_samples_received;
+			got_fresh_sample = true;
 		}
 	}
 
@@ -195,6 +237,21 @@ void LosGuidance::Run()
 	if (_vehicle_attitude_sub.update(&att)) {
 		_q_attitude = Quatf(att.q);
 		_has_attitude = true;
+	}
+
+	// Latch local position at the moment of the most recent confirmed-good
+	// bearing — this is what the fallback hold setpoint anchors to. Only
+	// updating on fresh samples keeps the latch from drifting during a
+	// stale-bearing window.
+	if (got_fresh_sample) {
+		vehicle_local_position_s lpos;
+
+		if (_vehicle_local_position_sub.copy(&lpos) && lpos.xy_valid && lpos.z_valid) {
+			_latched_position_ned(0) = lpos.x;
+			_latched_position_ned(1) = lpos.y;
+			_latched_position_ned(2) = lpos.z;
+			_has_latched_position = true;
+		}
 	}
 
 	if (!_param_los_gd_en.get()) {
@@ -207,9 +264,16 @@ void LosGuidance::Run()
 		static_cast<hrt_abstime>(_param_los_gd_timeout_ms.get()) * 1000ULL;
 
 	if (!_has_sample || (now - _last_sample_timestamp) > timeout_us) {
-		// Stop publishing so commander can time out OFFBOARD if the
-		// bearings stop arriving; this is the documented failsafe hook.
 		++_early_return_no_fresh_los;
+
+		// Soft fallback: hold the last known position instead of
+		// dropping to commander's OFFBOARD failsafe on transient
+		// CV dropouts. If we never latched a position (cold start,
+		// no LOS yet), publish nothing and let commander handle it.
+		if (_has_latched_position) {
+			publish_hold_setpoint();
+		}
+
 		return;
 	}
 
@@ -254,12 +318,21 @@ int LosGuidance::print_status()
 		 (double)_param_los_gd_gimb_yaw.get(),
 		 (int)_param_los_gd_pub_hz.get());
 
-	PX4_INFO("rx=%" PRIu64 " tx=%" PRIu64 " accel_compute_fail=%" PRIu64
+	PX4_INFO("rx=%" PRIu64 " tx=%" PRIu64 " hold_tx=%" PRIu64
+		 " accel_compute_fail=%" PRIu64
 		 " early_disabled=%" PRIu64 " early_no_fresh_los=%" PRIu64
-		 " has_sample=%d has_attitude=%d",
-		 _samples_received, _setpoints_published, _accel_compute_failures,
+		 " has_sample=%d has_attitude=%d has_latched_pos=%d",
+		 _samples_received, _setpoints_published, _hold_setpoints_published,
+		 _accel_compute_failures,
 		 _early_return_disabled, _early_return_no_fresh_los,
-		 (int)_has_sample, (int)_has_attitude);
+		 (int)_has_sample, (int)_has_attitude, (int)_has_latched_position);
+
+	if (_has_latched_position) {
+		PX4_INFO("latched NED x=%.2f y=%.2f z=%.2f",
+			 (double)_latched_position_ned(0),
+			 (double)_latched_position_ned(1),
+			 (double)_latched_position_ned(2));
+	}
 
 	if (_has_sample) {
 		PX4_INFO("last bearing a=%.3f b=%.3f (ar=%.3f br=%.3f) age=%" PRIu64 " us",
@@ -307,8 +380,12 @@ acceleration command; the operator still has to switch the vehicle to
 OFFBOARD via RC/QGC/MAVLink.
 
 When the bearing stream goes stale (older than `LOS_GD_TIMEOUT`), the
-module stops publishing so commander can engage its OFFBOARD timeout
-failsafe.
+module switches to a position-hold setpoint anchored at the vehicle's
+local position at the moment of the most recent fresh bearing. Hold
+continues indefinitely until fresh bearings resume or the operator
+intervenes. If no bearing has ever been received, the module publishes
+nothing so commander handles the situation through its usual
+OFFBOARD-timeout path.
 
 )DESCR_STR");
 
