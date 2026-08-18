@@ -1,0 +1,80 @@
+module_name: flip_rig
+parameters:
+- group: Flip Rig
+  definitions:
+    FRIG_EN:
+      description:
+        short: Enable the rig-only single-shot 360 degree flip controller
+        long: |
+          When enabled, flip_rig continuously streams a live attitude-
+          tracking setpoint once it has a valid attitude estimate (required
+          for commander to admit the OFFBOARD switch at all - no position
+          estimate is ever needed, this module never touches position).
+          The moment OFFBOARD is engaged it latches the vehicle's current
+          yaw and executes exactly one 360 degree roll via raw body-rate
+          setpoints, then commands a level attitude at the latched yaw and
+          holds it - it does NOT return to or hold any position. Leaving
+          and re-entering OFFBOARD arms a fresh single flip. Publishes
+          nothing while disabled.
+      type: boolean
+      default: 1
+
+    FRIG_RATE:
+      description:
+        short: Commanded roll rate during the flip
+        long: |
+          Constant roll rate commanded for the whole flip via
+          vehicle_rates_setpoint. This module is meant for real-hardware
+          rig testing, not SITL - start well below the max and only
+          increase once tracking looks clean on this specific airframe.
+      type: float
+      default: 200.0
+      min: 30.0
+      max: 1000.0
+      unit: deg/s
+      decimal: 0
+
+    FRIG_THRUST:
+      description:
+        short: Normalized body-Z thrust held during the flip and post-flip hold
+        long: |
+          Passed straight through as thrust_body[2] for the flip and for
+          the level-hold afterward (negative = upward in PX4's body
+          frame). There is no sensible default for this across airframes -
+          it MUST be set to match this vehicle's actual hover thrust
+          (check a previous stable-hover log / MC_HOVER_THRUST_ESTIMATOR
+          output) before running. Do not reuse flip_360's SITL-tuned value.
+      type: float
+      default: -0.5
+      min: -1.0
+      max: 0.0
+      decimal: 2
+
+    FRIG_DURATION:
+      description:
+        short: Safety cutoff for the flip
+        long: |
+          Maximum time the flip phase is allowed to run before it is
+          forced to end regardless of how much rotation has actually
+          accumulated (accumulated attitude tracking normally ends the
+          flip earlier, at 95% of a full revolution).
+      type: float
+      default: 1.0
+      min: 0.3
+      max: 5.0
+      unit: s
+      decimal: 1
+
+    FRIG_PUB_HZ:
+      description:
+        short: Internal publish rate for offboard_control_mode + setpoints
+        long: |
+          Must be high enough (>= 25 Hz) to keep the commander OFFBOARD
+          heartbeat alive. Applied at module start; runtime changes take
+          effect on the next parameter-update tick (the work-item is
+          rescheduled).
+      type: int32
+      default: 50
+      min: 10
+      max: 250
+      unit: Hz

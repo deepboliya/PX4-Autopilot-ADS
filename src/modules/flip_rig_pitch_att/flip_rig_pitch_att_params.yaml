@@ -1,0 +1,93 @@
+module_name: flip_rig_pitch_att
+parameters:
+- group: Flip Rig
+  definitions:
+    FRIGPA_EN:
+      description:
+        short: Enable the rig-only single-shot 360 degree pitch flip controller (attitude control)
+        long: |
+          When enabled, flip_rig_pitch_att continuously streams a live
+          attitude-tracking setpoint once it has a valid attitude estimate
+          (required for commander to admit the OFFBOARD switch at all - no
+          position estimate is ever needed, this module never touches
+          position). The moment OFFBOARD is engaged it latches the vehicle's
+          current yaw and executes exactly one 360 degree rotation about the
+          pitch axis by chasing a continuously-advancing attitude setpoint
+          (see FRIGPA_RATE), then commands a level attitude at the latched
+          yaw and holds it - it does NOT return to or hold any position.
+          Leaving and re-entering OFFBOARD arms a fresh single flip.
+          Publishes nothing while disabled.
+      type: boolean
+      default: 1
+
+    FRIGPA_RATE:
+      description:
+        short: Commanded pitch rate of the leader attitude setpoint during the flip
+        long: |
+          Constant pitch rate at which the internal "leader" attitude
+          setpoint advances during the flip. Tracked via
+          vehicle_attitude_setpoint through mc_att_control's attitude
+          P-loop (not raw body rates). This MUST stay well below
+          MC_PITCHRATE_MAX: the attitude controller's output rate is
+          hard-clamped to that limit no matter how far ahead the leader
+          gets, so a FRIGPA_RATE at or above it means the vehicle can never
+          catch up - tracking error grows past the controller's +-180
+          degree shortest-arc limit and the flip stalls and reverses
+          instead of completing. This module is meant for real-hardware rig
+          testing, not SITL - start well below the max and only increase
+          once tracking looks clean on this specific airframe.
+      type: float
+      default: 120.0
+      min: 30.0
+      max: 200.0
+      unit: deg/s
+      decimal: 0
+
+    FRIGPA_THRUST:
+      description:
+        short: Normalized body-Z thrust held during the flip and post-flip hold
+        long: |
+          Passed straight through as thrust_body[2] for the flip and for
+          the level-hold afterward (negative = upward in PX4's body
+          frame). There is no sensible default for this across airframes -
+          it MUST be set to match this vehicle's actual hover thrust
+          (check a previous stable-hover log / MC_HOVER_THRUST_ESTIMATOR
+          output) before running.
+      type: float
+      default: -0.5
+      min: -1.0
+      max: 0.0
+      decimal: 2
+
+    FRIGPA_DURATION:
+      description:
+        short: Safety cutoff for the flip
+        long: |
+          Maximum time the flip phase is allowed to run before it is
+          forced to end regardless of how much rotation has actually
+          accumulated. Unlike the rate-controlled flip modules, the
+          leader setpoint's own progress is exact (not a noisy
+          measurement), so the flip normally ends right at a genuine full
+          revolution rather than an early "close enough" threshold.
+      type: float
+      default: 2.0
+      min: 0.3
+      max: 8.0
+      unit: s
+      decimal: 1
+
+    FRIGPA_PUB_HZ:
+      description:
+        short: Internal publish rate for offboard_control_mode + setpoints
+        long: |
+          Must be high enough (>= 25 Hz) to keep the commander OFFBOARD
+          heartbeat alive, and also sets the integration step for the
+          leader attitude setpoint - too low a rate coarsens each step of
+          the leader's advance. Applied at module start; runtime changes
+          take effect on the next parameter-update tick (the work-item is
+          rescheduled).
+      type: int32
+      default: 100
+      min: 25
+      max: 250
+      unit: Hz

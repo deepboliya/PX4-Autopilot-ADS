@@ -49,3 +49,19 @@ param set-default SIM_GZ_EC_MAX4 1000
 
 param set-default MPC_THR_HOVER 0.60
 param set-default NAV_DLL_ACT 2
+
+
+# This SITL vehicle is flown purely over uXRCE-DDS/ROS2 offboard control -
+# no MAVLink GCS (QGroundControl etc.) ever connects, so vehicle_status.
+# gcs_connection_lost stays true from boot onward (Commander.cpp default).
+# NAV_DLL_ACT > 0 makes a data link mandatory to arm in ANY mode, which
+# would permanently block arming here. Disabled for this SITL airframe;
+# real-hardware antidrone.px4board builds are unaffected by this file.
+param set-default NAV_DLL_ACT 0
+
+# Flip-test maneuver: FailureDetector disarms at 60 deg roll/pitch by default,
+# which trips mid-flip regardless of the rate-setpoint control path. Raised
+# above the flip's full-rotation envelope so the offboard flip scripts under
+# test_maneuver/ don't get an uncommanded disarm partway through.
+param set-default FD_FAIL_R 180
+param set-default FD_FAIL_P 180

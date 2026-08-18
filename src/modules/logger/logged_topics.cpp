@@ -123,6 +123,7 @@ void LoggedTopics::add_default_topics()
 	add_topic("sensor_combined");
 	add_optional_topic("sensor_correction");
 	add_optional_topic("sensor_gyro_fft", 50);
+	add_topic("los_sensor"); // new topic for logging los sensor data
 	add_topic("sensor_selection");
 	add_topic("sensors_status_imu", 200);
 	add_optional_topic("spoilers_setpoint", 1000);

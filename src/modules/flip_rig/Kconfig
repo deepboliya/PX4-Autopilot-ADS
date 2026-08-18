@@ -1,0 +1,14 @@
+menuconfig MODULES_FLIP_RIG
+	bool "flip_rig"
+	default n
+	---help---
+		Enable support for flip_rig
+
+		Standalone, manually-started single-shot 360 degree flip
+		controller for a fixture that physically prevents translation
+		(e.g. a 3-axis gimbal/gyroscope test rig). Never touches position/
+		GPS - start with `flip_rig start` and do not run it alongside
+		another OFFBOARD-publishing module. The instant OFFBOARD is
+		engaged, it latches the vehicle's current yaw, executes exactly
+		one 360 degree roll via raw body-rate setpoints, then commands a
+		level attitude at the latched yaw and holds it.

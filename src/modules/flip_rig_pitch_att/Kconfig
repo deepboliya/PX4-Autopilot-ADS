@@ -1,0 +1,17 @@
+menuconfig MODULES_FLIP_RIG_PITCH_ATT
+	bool "flip_rig_pitch_att"
+	default n
+	---help---
+		Enable support for flip_rig_pitch_att
+
+		Standalone, manually-started single-shot 360 degree pitch flip
+		controller for a fixture that physically prevents translation
+		(e.g. a 3-axis gimbal/gyroscope test rig), driven through the
+		ATTITUDE setpoint path (mc_att_control) instead of raw body
+		rates. Never touches position/GPS - start with
+		`flip_rig_pitch_att start` and do not run it alongside another
+		OFFBOARD-publishing module. The instant OFFBOARD is engaged, it
+		latches the vehicle's current yaw, executes exactly one 360
+		degree pitch rotation by chasing a continuously-advancing
+		attitude setpoint, then commands a level attitude at the
+		latched yaw and holds it.

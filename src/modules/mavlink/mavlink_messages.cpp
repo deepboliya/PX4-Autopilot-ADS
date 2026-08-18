@@ -91,6 +91,7 @@
 #include "streams/HOME_POSITION.hpp"
 #include "streams/HYGROMETER_SENSOR.hpp"
 #include "streams/LANDING_TARGET.hpp"
+#include "streams/LOS_SENSOR.hpp"
 #include "streams/LOCAL_POSITION_NED.hpp"
 #include "streams/MAG_CAL_REPORT.hpp"
 #include "streams/MANUAL_CONTROL.hpp"
@@ -328,6 +329,11 @@ static const StreamListItem streams_list[] = {
 #if defined(LANDING_TARGET_HPP)
 	create_stream_list_item<MavlinkStreamLandingTarget>(),
 #endif
+
+#if defined(LOS_SENSOR_HPP)
+	create_stream_list_item<MavlinkStreamLosSensor>(),
+#endif // LOS_SENSOR_HPP
+
 #if defined(LOCAL_POSITION_NED_HPP)
 	create_stream_list_item<MavlinkStreamLocalPositionNED>(),
 #endif // LOCAL_POSITION_NED_HPP
