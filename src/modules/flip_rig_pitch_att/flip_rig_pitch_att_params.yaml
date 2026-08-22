@@ -91,3 +91,42 @@ parameters:
       min: 25
       max: 250
       unit: Hz
+
+    FRIGPA_HOLD_ANG:
+      description:
+        short: Stop-and-hold pitch angle, 0 = do a full 360 degree flip
+        long: |
+          When 0 (the default) the module behaves exactly as before: one full
+          360 degree pitch rotation, followed by a level hold at the yaw
+          latched on OFFBOARD entry.
+
+          When greater than 0, the leader setpoint ramps at FRIGPA_RATE only
+          as far as this pitch angle, stops exactly on it, and then holds
+          THAT attitude for as long as OFFBOARD stays engaged. The vehicle
+          does NOT return to level - leave OFFBOARD to end the hold. Use this
+          to park the airframe at a fixed pitch on the rig, e.g. 79 degrees.
+
+          Ramping rather than stepping is the whole point of doing this here
+          instead of just publishing a static setpoint. A static target
+          presents the entire angle to mc_att_control as instantaneous error;
+          past roughly 57 degrees that saturates MC_PITCHRATE_MAX outright,
+          spikes the torque demand, and with MC_AIRMODE=0 is paid for by the
+          mixer cutting collective thrust. The ramp keeps the tracking error
+          at the normal small lag the whole way, so no angle in range
+          provokes that.
+
+          Angles beyond 180 degrees work for the same reason the full flip
+          does: the +-180 degree shortest-arc limit binds the tracking ERROR,
+          not the total distance travelled, and the error stays small
+          throughout. A static setpoint could never reach them.
+
+          If FRIGPA_DURATION expires before this angle is reached, the module
+          holds wherever the leader got to rather than snapping back to
+          level - so unlike the full-flip mode, running out of time here is
+          harmless.
+      type: float
+      default: 0.0
+      min: 0.0
+      max: 360.0
+      unit: deg
+      decimal: 0

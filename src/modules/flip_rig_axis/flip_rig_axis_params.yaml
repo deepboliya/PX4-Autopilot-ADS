@@ -1,0 +1,201 @@
+module_name: flip_rig_axis
+parameters:
+- group: Flip Rig
+  definitions:
+    FRIGAX_EN:
+      description:
+        short: Enable the rig-only single-shot 360 degree arbitrary-axis flip controller
+        long: |
+          When enabled, flip_rig_axis continuously streams a live
+          attitude-tracking setpoint once it has a valid attitude estimate
+          (required for commander to admit the OFFBOARD switch at all - no
+          position estimate is ever needed, this module never touches
+          position). The moment OFFBOARD is engaged it latches the vehicle's
+          current yaw and executes exactly one 360 degree rotation about the
+          axis selected by FRIGAX_AXIS, by chasing a continuously-advancing
+          attitude setpoint (see FRIGAX_RATE), then commands a level attitude
+          at the latched yaw and holds it - it does NOT return to or hold any
+          position. Leaving and re-entering OFFBOARD arms a fresh single
+          flip. Publishes nothing while disabled.
+      type: boolean
+      default: 1
+
+    FRIGAX_AXIS:
+      description:
+        short: Orientation of the flip axis within the body xy-plane
+        long: |
+          Direction of the axis the leader attitude setpoint revolves about,
+          measured in the body xy-plane from the body x (roll) axis toward
+          the body y (pitch) axis:
+
+            0 deg   -> pure roll, rotation about body x
+            90 deg  -> pure pitch, rotation about body y (nose down first)
+            180 deg -> pure roll the other way round
+            270 deg -> pure pitch the other way round (nose up first)
+            45 deg  -> diagonal, an equal mix of roll and pitch
+
+          FRIGAX_RATE is always the TOTAL angular speed about whichever axis
+          is chosen, and the flip always ends after one full revolution about
+          it, so changing FRIGAX_AXIS on its own changes only the DIRECTION
+          of the flip - never how fast it runs or how far it goes.
+
+          Torque authority is NOT the same in every direction. On a quadrotor
+          in X configuration the 45/135/225/315 degree axes point straight
+          along a motor arm: the two rotors sitting on that axis have no
+          moment arm about it and contribute nothing, so only two rotors do
+          the work and the mixer clips at 1/sqrt(2) (about 71%) of the torque
+          available to a pure roll or pure pitch flip. Pure roll and pure
+          pitch are the best cases, because those axes pass between the arms
+          and all four rotors contribute. When flipping about a diagonal,
+          lower FRIGAX_RATE by roughly 30%, keep FRIGAX_THRUST at -0.5 where
+          the motor headroom is symmetric, and consider MC_AIRMODE >= 1 so
+          the mixer preserves roll/pitch authority instead of stealing
+          collective thrust when it saturates.
+      type: float
+      default: 90.0
+      min: 0.0
+      max: 360.0
+      unit: deg
+      decimal: 0
+
+    FRIGAX_RATE:
+      description:
+        short: Total angular speed of the leader attitude setpoint during the flip
+        long: |
+          Constant angular speed at which the internal "leader" attitude
+          setpoint advances about the FRIGAX_AXIS direction during the flip.
+          Tracked via vehicle_attitude_setpoint through mc_att_control's
+          attitude P-loop (not raw body rates). This is the TOTAL rate about
+          the chosen axis; FRIGAX_AXIS only decides how it is shared between
+          the roll and pitch channels.
+
+          Each channel's share must stay well below that channel's own limit
+          (MC_ROLLRATE_MAX / MC_PITCHRATE_MAX): the attitude controller's
+          output is hard-clamped there no matter how far ahead the leader
+          gets, so a rate at or above the limit means the vehicle can never
+          catch up - tracking error grows past the controller's +-180 degree
+          shortest-arc limit and the flip stalls and reverses instead of
+          completing.
+
+          A second, less obvious ceiling comes from the attitude P-law
+          itself: the loop can never command more than 2 * MC_ROLL_P (or
+          2 * MC_PITCH_P) rad/s however large the error gets, because the
+          error vector saturates at 2*sin(phi/2) <= 2. Both ceilings are
+          checked at startup and on every parameter change.
+
+          This module is meant for real-hardware rig testing, not SITL -
+          start well below the limits and only increase once tracking looks
+          clean on this specific airframe.
+      type: float
+      default: 120.0
+      min: 30.0
+      max: 200.0
+      unit: deg/s
+      decimal: 0
+
+    FRIGAX_THRUST:
+      description:
+        short: Normalized body-Z thrust held during the flip and post-flip hold
+        long: |
+          Passed straight through as thrust_body[2] for the flip and for the
+          level-hold afterward (negative = upward in PX4's body frame). There
+          is no sensible default for this across airframes - it MUST be set
+          to match this vehicle's actual hover thrust (check a previous
+          stable-hover log / MC_HOVER_THRUST_ESTIMATOR output) before
+          running.
+
+          Note that -0.5 is also the value at which the mixer has the most
+          symmetric motor headroom, min(u0, 1-u0), and therefore the most
+          torque available before roll/pitch clips. Moving away from -0.5 in
+          either direction costs authority, and with MC_AIRMODE=0 the
+          allocator's first response to a saturating torque demand is to
+          reduce collective thrust - which shows up on hardware as a thrust
+          jerk even though this value never changes.
+      type: float
+      default: -0.5
+      min: -1.0
+      max: 0.0
+      decimal: 2
+
+    FRIGAX_DURATION:
+      description:
+        short: Safety cutoff for the flip
+        long: |
+          Maximum time the flip phase is allowed to run before it is forced
+          to end regardless of how much rotation has actually accumulated.
+
+          This MUST exceed 360 / FRIGAX_RATE seconds or the cutoff fires
+          before the revolution completes. That matters more than it sounds:
+          the level-hold that follows takes the SHORTEST arc back to level,
+          so an abort short of 180 degrees makes the vehicle reverse
+          violently rather than finish the turn. The startup check warns if
+          the configured combination cannot complete.
+
+          Because this parameter caps at 8 s, the slowest flip that can
+          complete at all is 360/8 = 45 deg/s.
+
+          The default is deliberately set above 360/FRIGAX_RATE for the
+          default rate, unlike the older flip_rig_pitch_att module whose
+          2.0 s default silently aborted a 120 deg/s flip at 240 degrees.
+      type: float
+      default: 3.5
+      min: 0.3
+      max: 8.0
+      unit: s
+      decimal: 1
+
+    FRIGAX_PUB_HZ:
+      description:
+        short: Internal publish rate for offboard_control_mode + setpoints
+        long: |
+          Must be high enough (>= 25 Hz) to keep the commander OFFBOARD
+          heartbeat alive, and also sets the integration step for the leader
+          attitude setpoint - too low a rate coarsens each step of the
+          leader's advance. Applied at module start; runtime changes take
+          effect on the next parameter-update tick (the work-item is
+          rescheduled).
+      type: int32
+      default: 100
+      min: 25
+      max: 250
+      unit: Hz
+
+    FRIGAX_HOLD_ANG:
+      description:
+        short: Stop-and-hold angle, 0 = do a full 360 degree revolution
+        long: |
+          When 0 (the default) the module does what it otherwise describes:
+          one full 360 degree revolution about FRIGAX_AXIS, followed by a
+          level hold at the yaw latched on OFFBOARD entry.
+
+          When greater than 0, the leader setpoint ramps at FRIGAX_RATE only
+          as far as this angle, stops exactly on it, and then holds THAT
+          attitude for as long as OFFBOARD stays engaged. The vehicle does
+          NOT return to level - leave OFFBOARD to end the hold. Use this to
+          park the airframe at a fixed tilt on the rig, e.g. 79 deg of pitch.
+
+          Two properties of the ramp are worth knowing:
+
+          Ramping rather than stepping is what makes this safe. Commanding
+          the same angle as a static setpoint would present the attitude
+          controller with the whole angle as instantaneous error; anything
+          past about 57 deg then saturates the MC_PITCHRATE_MAX clamp, spikes
+          the torque demand and (with MC_AIRMODE=0) is paid for by cutting
+          collective thrust. The ramp keeps the error at the normal small
+          tracking lag the whole way, so no angle in range provokes that.
+
+          Angles beyond 180 deg work for the same reason the 360 flip does:
+          the +-180 degree shortest-arc limit applies to the tracking ERROR,
+          not to the total distance travelled, and the error stays small
+          throughout. A static setpoint could never reach them.
+
+          If the FRIGAX_DURATION cutoff fires before this angle is reached,
+          the module holds wherever the leader got to rather than snapping
+          back to level - so unlike the full-revolution mode, an early cutoff
+          here is harmless.
+      type: float
+      default: 0.0
+      min: 0.0
+      max: 360.0
+      unit: deg
+      decimal: 0

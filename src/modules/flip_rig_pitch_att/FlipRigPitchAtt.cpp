@@ -158,6 +158,48 @@ void FlipRigPitchAtt::publish_level_hold()
 	++_setpoints_published;
 }
 
+void FlipRigPitchAtt::publish_attitude_hold()
+{
+	// FRIGPA_HOLD_ANG mode, once the ramp has finished: keep republishing the
+	// frozen leader, i.e. the attitude the ramp stopped on. The vehicle is at
+	// most one tracking lag away from it, and that lag decays to zero as soon
+	// as the leader stops advancing, so entering this phase is a step of a
+	// few tens of degrees at worst.
+	//
+	// That is exactly why this is a separate phase rather than reusing
+	// publish_level_hold(): from a parked attitude past roughly 57 degrees a
+	// jump back to level saturates the MC_PITCHRATE_MAX clamp outright, which
+	// spikes the torque demand and (with MC_AIRMODE=0) makes the mixer pay
+	// for it out of collective thrust.
+	//
+	// Nothing here ever ends the hold. The vehicle stays parked at this
+	// attitude for as long as OFFBOARD is engaged; leaving OFFBOARD is the
+	// only exit, and it re-arms a fresh single run.
+	const hrt_abstime now = hrt_absolute_time();
+
+	offboard_control_mode_s ocm{};
+	ocm.timestamp = now;
+	ocm.position = false;
+	ocm.velocity = false;
+	ocm.acceleration = false;
+	ocm.attitude = true;
+	ocm.body_rate = false;
+	ocm.thrust_and_torque = false;
+	ocm.direct_actuator = false;
+	_offboard_control_mode_pub.publish(ocm);
+
+	vehicle_attitude_setpoint_s sp{};
+	sp.timestamp = now;
+	_qd_leader.copyTo(sp.q_d);
+	sp.thrust_body[0] = 0.f;
+	sp.thrust_body[1] = 0.f;
+	sp.thrust_body[2] = _param_frigpa_thrust.get();
+	_vehicle_attitude_setpoint_pub.publish(sp);
+
+	_last_publish_timestamp = now;
+	++_setpoints_published;
+}
+
 void FlipRigPitchAtt::publish_flip_attitude(hrt_abstime now)
 {
 	// The flip itself: a rotating "leader" attitude setpoint, advanced every
@@ -173,7 +215,15 @@ void FlipRigPitchAtt::publish_flip_attitude(hrt_abstime now)
 	const float dt = math::constrain(static_cast<float>(now - _last_leader_update_time) * 1e-6f, 0.f, 0.1f);
 	_last_leader_update_time = now;
 
-	const float dtheta = math::radians(_param_frigpa_rate.get()) * dt;
+	float dtheta = math::radians(_param_frigpa_rate.get()) * dt;
+
+	// Never step past the target. Without this the leader stops up to one
+	// whole step beyond it (1.2 deg at 120 deg/s and 100 Hz), which does not
+	// matter for a full revolution but does when FRIGPA_HOLD_ANG asks to park
+	// at a specific pitch. Clamping the last step lands the leader exactly on
+	// the requested angle.
+	dtheta = math::min(dtheta, math::max(_target_rotation - _accumulated_rotation, 0.f));
+
 	_qd_leader = _qd_leader * Quatf(AxisAnglef(0.f, dtheta, 0.f));
 	_qd_leader.normalize();
 	_accumulated_rotation += dtheta;
@@ -274,6 +324,13 @@ void FlipRigPitchAtt::Run()
 		_accumulated_rotation = 0.f;
 		_qd_leader = _current_att;        // leader starts exactly at the live attitude: zero initial error
 		_last_leader_update_time = now;
+
+		// Latched here, not read per-cycle: a parameter change must not
+		// redefine the manoeuvre already under way. Same reasoning as
+		// _hold_yaw above.
+		const float hold_ang_deg = _param_frigpa_hold_ang.get();
+		_hold_at_angle = (hold_ang_deg > 1e-3f);
+		_target_rotation = _hold_at_angle ? math::radians(hold_ang_deg) : (2.f * M_PI_F);
 	}
 
 	if (_flip_active) {
@@ -282,10 +339,17 @@ void FlipRigPitchAtt::Run()
 		const float elapsed_s = static_cast<float>(now - _flip_start_time) * 1e-6f;
 		// _accumulated_rotation is the leader's own exact progress, not a
 		// noisy measurement of the real vehicle - so unlike the rate-
-		// controlled modules there's no need for a 95%-of-a-revolution
-		// allowance. Wait for the genuine full turn; duration is only a
-		// safety cutoff.
-		const bool done = (_accumulated_rotation >= 2.f * M_PI_F) || (elapsed_s >= _param_frigpa_duration.get());
+		// controlled modules there's no need for a 95%-of-target allowance.
+		// Wait for the genuine full travel.
+		const bool reached = (_accumulated_rotation >= _target_rotation);
+
+		// FRIGPA_DURATION guards the 360 flip only. In hold mode the ramp is
+		// bounded by construction - it always terminates after
+		// FRIGPA_HOLD_ANG / FRIGPA_RATE seconds, at worst 360/30 = 12 s - so
+		// there is no runaway for a cutoff to catch, and applying one could
+		// only strand the vehicle short of the angle it was told to hold.
+		const bool timed_out = !_hold_at_angle && (elapsed_s >= _param_frigpa_duration.get());
+		const bool done = reached || timed_out;
 
 		if (done) {
 			_flip_active = false;
@@ -295,9 +359,16 @@ void FlipRigPitchAtt::Run()
 		return;
 	}
 
-	// _flip_done: hold level at the latched yaw, and stay there - this mode
-	// never flips again on its own while OFFBOARD stays engaged.
-	publish_level_hold();
+	// _flip_done: hold, and stay there - this module never runs again on its
+	// own while OFFBOARD stays engaged.
+	if (_hold_at_angle) {
+		// Park at the attitude the ramp stopped on.
+		publish_attitude_hold();
+
+	} else {
+		// Full flip: come back to level at the latched yaw.
+		publish_level_hold();
+	}
 }
 
 int FlipRigPitchAtt::task_spawn(int argc, char *argv[])
@@ -324,17 +395,29 @@ int FlipRigPitchAtt::task_spawn(int argc, char *argv[])
 
 int FlipRigPitchAtt::print_status()
 {
+	const float rate = _param_frigpa_rate.get();
+	const float hold_ang = _param_frigpa_hold_ang.get();
+	const bool hold_mode = (hold_ang > 1e-3f);
+	const float travel_deg = hold_mode ? hold_ang : 360.f;
+
 	PX4_INFO("enabled=%d rate=%.0f deg/s thrust=%.2f duration=%.2f s",
 		 (int)_param_frigpa_en.get(),
-		 (double)_param_frigpa_rate.get(),
+		 (double)rate,
 		 (double)_param_frigpa_thrust.get(),
 		 (double)_param_frigpa_duration.get());
 
+	PX4_INFO("mode=%s travel=%.0f deg, ramp takes %.2f s at this rate (cutoff %s)",
+		 hold_mode ? "ramp-and-hold" : "full-flip",
+		 (double)travel_deg,
+		 (double)((rate > 1e-3f) ? (travel_deg / rate) : 0.f),
+		 hold_mode ? "not applied" : "armed");
+
 	PX4_INFO("tx=%" PRIu64 " early_disabled=%" PRIu64 " early_no_attitude=%" PRIu64
-		 " offboard=%d flip_active=%d flip_done=%d leader_rot=%.0f deg",
+		 " offboard=%d active=%d done=%d leader_rot=%.1f of %.0f deg",
 		 _setpoints_published, _early_return_disabled, _early_return_no_attitude,
 		 (int)_was_offboard, (int)_flip_active, (int)_flip_done,
-		 (double)math::degrees(_accumulated_rotation));
+		 (double)math::degrees(_accumulated_rotation),
+		 (double)math::degrees(_target_rotation));
 
 	if (_was_offboard) {
 		PX4_INFO("hold_yaw=%.3f rad", (double)_hold_yaw);
@@ -377,13 +460,39 @@ avoiding that conflict is the operator's responsibility.
 
 Once it has a valid attitude estimate, it continuously streams a live
 attitude-tracking setpoint (required for commander to admit the OFFBOARD
-switch at all). The instant OFFBOARD is engaged, it latches the vehicle's
-current yaw and executes exactly one 360 degree pitch rotation by chasing
-the leader setpoint (FRIGPA_RATE deg/s, FRIGPA_THRUST held thrust, capped at
-FRIGPA_DURATION seconds as a safety cutoff) - then commands a level attitude
-at the latched yaw and stays there. It does NOT return to, or hold, any
-position. It does not flip again on its own; leaving and re-entering
-OFFBOARD re-latches the yaw and arms a fresh single flip.
+switch at all). The instant OFFBOARD is engaged it latches the vehicle's
+current yaw and pitches by chasing the leader setpoint (FRIGPA_RATE deg/s,
+FRIGPA_THRUST held thrust). It does NOT return to, or hold, any position. It
+does not run again on its own; leaving and re-entering OFFBOARD re-latches
+the yaw and arms a fresh single run.
+
+FRIGPA_HOLD_ANG selects between the two things it can do:
+
+- 0 (the default), FULL-FLIP mode: one complete 360 degree pitch rotation,
+  then a level attitude at the latched yaw, held. FRIGPA_DURATION caps the
+  rotation as a safety cutoff.
+- greater than 0, RAMP-AND-HOLD mode: the leader ramps only as far as that
+  pitch angle, stops exactly on it, and holds THAT attitude until OFFBOARD is
+  left. The vehicle does not return to level. Use it to park the airframe at
+  a fixed pitch on the rig. FRIGPA_DURATION is NOT applied in this mode - the
+  ramp is bounded by construction at FRIGPA_HOLD_ANG/FRIGPA_RATE seconds, so
+  a cutoff could only strand the vehicle short of the angle it was told to
+  hold.
+
+Ramping rather than stepping is why the second mode is done here at all
+instead of by publishing a static setpoint. A static target presents the
+whole angle to mc_att_control as instantaneous error, and past roughly 57
+degrees that saturates MC_PITCHRATE_MAX outright, spiking the torque demand
+and (with MC_AIRMODE=0) making the mixer pay for it out of collective thrust.
+The ramp keeps the error at the normal small tracking lag the whole way.
+Angles beyond 180 degrees work for the same reason the full flip does: the
++-180 degree shortest-arc limit binds the tracking ERROR, not the total
+distance travelled.
+
+Note that in ramp-and-hold mode the airframe stays tilted until OFFBOARD is
+left, and that at large pitch angles very little of the thrust is vertical
+(only cos(79 deg) = 19% at 79 degrees) - this mode is for a fixture that
+cannot translate, not for free flight.
 
 FRIGPA_RATE must stay well below MC_PITCHRATE_MAX: the leader is only useful
 as long as the real vehicle can keep pace with it, and the attitude

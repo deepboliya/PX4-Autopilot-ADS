@@ -1,0 +1,20 @@
+menuconfig MODULES_FLIP_RIG_AXIS
+	bool "flip_rig_axis"
+	default n
+	---help---
+		Enable support for flip_rig_axis
+
+		Standalone, manually-started single-shot 360 degree flip
+		controller for a fixture that physically prevents translation
+		(e.g. a 3-axis gimbal/gyroscope test rig), driven through the
+		ATTITUDE setpoint path (mc_att_control) instead of raw body
+		rates. Generalises flip_rig_pitch_att: the rotation axis is a
+		free parameter anywhere in the body xy-plane (FRIGAX_AXIS), so
+		the same module performs roll flips, pitch flips, and any
+		diagonal in between. Never touches position/GPS - start with
+		`flip_rig_axis start` and do not run it alongside another
+		OFFBOARD-publishing module. The instant OFFBOARD is engaged it
+		latches the vehicle's current yaw, executes exactly one 360
+		degree rotation about the chosen axis by chasing a
+		continuously-advancing attitude setpoint, then commands a level
+		attitude at the latched yaw and holds it.
