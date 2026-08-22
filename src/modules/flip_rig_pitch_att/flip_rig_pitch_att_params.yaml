@@ -1,6 +1,6 @@
 module_name: flip_rig_pitch_att
 parameters:
-- group: Flip Rig
+- group: Flip Rigeverveserg
   definitions:
     FRIGPA_EN:
       description:

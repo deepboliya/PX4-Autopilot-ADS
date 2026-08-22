@@ -174,7 +174,11 @@ void FlipRigPitchAtt::publish_flip_attitude(hrt_abstime now)
 	_last_leader_update_time = now;
 
 	const float dtheta = math::radians(_param_frigpa_rate.get()) * dt;
-	_qd_leader = _qd_leader * Quatf(AxisAnglef(0.f, dtheta, 0.f));
+	// _qd_leader = _qd_leader * Quatf(AxisAnglef(0.f, dtheta, 0.f));
+
+	float theta = 79.f;
+	_qd_leader = _qd_leader * Quatf(AxisAnglef(0.f, theta, 0.f));
+
 	_qd_leader.normalize();
 	_accumulated_rotation += dtheta;
 
