@@ -54,7 +54,7 @@ parameters:
           (check a previous stable-hover log / MC_HOVER_THRUST_ESTIMATOR
           output) before running.
       type: float
-      default: -0.5
+      default: -0.2
       min: -1.0
       max: 0.0
       decimal: 2
