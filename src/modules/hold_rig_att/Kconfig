@@ -1,0 +1,28 @@
+menuconfig MODULES_HOLD_RIG_ATT
+	bool "hold_rig_att"
+	default n
+	---help---
+		Enable support for hold_rig_att
+
+		Standalone, manually-started controller that ramps the vehicle
+		to an arbitrary commanded 3D attitude and holds it there, for a
+		fixture that physically prevents translation (e.g. a 3-axis
+		gimbal/gyroscope test rig). Driven through the ATTITUDE setpoint
+		path (mc_att_control) instead of raw body rates. The
+		standing-still counterpart to flip_rig_axis: that module rotates
+		through a revolution about a fixed axis, this one travels to one
+		orientation and parks on it.
+
+		The target is specified either as a tilt magnitude plus a tilt
+		direction (HRATT_MODE 0, degenerate nowhere in 0-180 degrees) or
+		as Euler roll and pitch (HRATT_MODE 1, which loses control of
+		tilt near 90 degrees because Z-Y-X applies pitch about the
+		already-rolled axis). Ramping rather than stepping is what makes
+		large angles safe: a static setpoint saturates MC_ROLLRATE_MAX
+		past only ~57 degrees of error.
+
+		Never touches position/GPS - start with `hold_rig_att start` and
+		do not run it alongside another OFFBOARD-publishing module.
+		Requires FD_FAIL_R/FD_FAIL_P to be relaxed for holds past 60
+		degrees; the module warns about that and several other failsafes
+		at startup.
