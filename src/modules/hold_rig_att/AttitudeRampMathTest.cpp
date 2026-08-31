@@ -440,3 +440,56 @@ TEST(AttitudeRampMath, staticStepWouldSaturateButTheRampDoesNot)
 	EXPECT_LT(step_demand_deg, kRateMaxDeg);
 	EXPECT_TRUE(t.converged);
 }
+
+// ---------------------------------------------------------------------------
+// HRATT_THRUST_K's thrust-vs-tilt boost
+// ---------------------------------------------------------------------------
+
+TEST(AttitudeRampMath, zeroThrustGainReproducesTheOldConstantThrust)
+{
+	// k=0 must be a no-op at every tilt - this is the default, and existing
+	// HRATT_THRUST tunings must not change underneath anyone.
+	for (const float tilt_deg : {0.f, 30.f, 89.f, 90.f, 150.f}) {
+		EXPECT_FLOAT_EQ(compensate_thrust(-0.5f, math::radians(tilt_deg), 0.f), -0.5f)
+				<< "tilt=" << tilt_deg;
+	}
+}
+
+TEST(AttitudeRampMath, thrustGainIsInertAtZeroTilt)
+{
+	// sin(0) = 0 regardless of k: no boost is ever applied while level,
+	// whatever HRATT_THRUST_K is set to.
+	for (const float k : {0.1f, 0.5f, 1.f, 2.f}) {
+		EXPECT_FLOAT_EQ(compensate_thrust(-0.5f, 0.f, k), -0.5f) << "k=" << k;
+	}
+}
+
+TEST(AttitudeRampMath, thrustGainScalesSmoothlyWithTilt)
+{
+	// At 90 degrees sin(tilt) = 1, so k=1 exactly doubles the magnitude - the
+	// simplest case to check the formula against by hand.
+	EXPECT_NEAR(compensate_thrust(-0.5f, math::radians(90.f), 1.f), -1.f, 1e-5f);
+
+	// Monotonically increasing magnitude from 0 to 90 degrees, for a fixed
+	// gain - the whole point of scaling with tilt rather than stepping.
+	float previous_mag = 0.f;
+
+	for (const float tilt_deg : {0.f, 15.f, 30.f, 45.f, 60.f, 75.f, 90.f}) {
+		const float mag = fabsf(compensate_thrust(-0.5f, math::radians(tilt_deg), 0.5f));
+		EXPECT_GE(mag, previous_mag) << "tilt=" << tilt_deg;
+		previous_mag = mag;
+	}
+}
+
+TEST(AttitudeRampMath, thrustGainNeverFlipsSignOrBlowsUp)
+{
+	// Bounded for any tilt, including past 90 degrees where 1/cos(tilt) would
+	// have already diverged - this is the reason sin(tilt) was chosen over
+	// the classical lift-compensation curve. Sign always matches the base
+	// thrust: this only ever scales magnitude, never redirects it.
+	for (const float tilt_deg : {0.f, 45.f, 90.f, 135.f, 179.f}) {
+		const float thrust = compensate_thrust(-0.5f, math::radians(tilt_deg), 2.f);
+		EXPECT_LT(thrust, 0.f) << "tilt=" << tilt_deg;          // sign preserved
+		EXPECT_GE(thrust, -0.5f * 3.f) << "tilt=" << tilt_deg;  // bounded: |1+k*sin| <= 1+k
+	}
+}

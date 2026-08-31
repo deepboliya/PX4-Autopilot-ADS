@@ -232,4 +232,27 @@ inline float angle_between(const matrix::Quatf &a, const matrix::Quatf &b)
 	return matrix::AxisAnglef(delta).norm();
 }
 
+/**
+ * Scale a base thrust magnitude up as tilt grows, to buy back floor headroom
+ * on whichever motor a large static roll/pitch command drives down (see
+ * HRATT_THRUST_K docs for the allocator argument this is built on).
+ *
+ * sin(tilt) rather than the classical 1/cos(tilt) lift-compensation curve is
+ * deliberate: there is no free-flight weight to support here (this is a rig,
+ * not a hover), so there is no first-principles target this "should" hit -
+ * it is an empirical headroom knob, and sin(tilt) is bounded in [0, 1] for
+ * any tilt with no singularity to guard against, where 1/cos(tilt) diverges
+ * approaching 90 degrees and would need an arbitrary clamp angle to stay
+ * finite. k = 0 reproduces the old constant-thrust behaviour exactly.
+ *
+ * @param base_thrust HRATT_THRUST, i.e. the untilted thrust_body[2] value
+ * @param tilt_rad    current commanded tilt, e.g. tilt_of(leader or target)
+ * @param k           HRATT_THRUST_K, dimensionless compensation gain
+ * @return thrust_body[2] to publish this cycle
+ */
+inline float compensate_thrust(float base_thrust, float tilt_rad, float k)
+{
+	return base_thrust * (1.f + k * sinf(tilt_rad));
+}
+
 } // namespace hold_rig_att

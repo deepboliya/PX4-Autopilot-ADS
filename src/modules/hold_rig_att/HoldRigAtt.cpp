@@ -45,6 +45,7 @@ using matrix::Quatf;
 using matrix::Vector3f;
 
 using hold_rig_att::angle_between;
+using hold_rig_att::compensate_thrust;
 using hold_rig_att::decompose;
 using hold_rig_att::kArrivedRad;
 using hold_rig_att::ramp_step;
@@ -63,7 +64,31 @@ HoldRigAtt::HoldRigAtt() :
 bool HoldRigAtt::init()
 {
 	ScheduleOnInterval(_schedule_interval_us);
+	_param_mpc_thr_hover_handle = param_find("MPC_THR_HOVER");
 	return true;
+}
+
+float HoldRigAtt::base_thrust() const
+{
+	const float configured = _param_hratt_thrust.get();
+
+	if (fabsf(configured) > 1e-6f) {
+		return configured;
+	}
+
+	// HRATT_THRUST left at its default 0 means "pull from MPC_THR_HOVER
+	// instead" - see HRATT_THRUST's docs. Sign-flipped: MPC_THR_HOVER is a
+	// positive throttle fraction, thrust_body[2] is negative-up in body FRD.
+	// 0.5 (MPC_THR_HOVER's own default) covers the case the param can't be
+	// found at all, which should not happen on a real multicopter build.
+	float mpc_thr_hover = 0.5f;
+
+	if ((_param_mpc_thr_hover_handle == PARAM_INVALID)
+	    || (param_get(_param_mpc_thr_hover_handle, &mpc_thr_hover) != PX4_OK)) {
+		mpc_thr_hover = 0.5f;
+	}
+
+	return -mpc_thr_hover;
 }
 
 Quatf HoldRigAtt::target_relative() const
@@ -390,7 +415,26 @@ void HoldRigAtt::check_rig_disarm_params() const
 
 void HoldRigAtt::check_thrust_against_tilt() const
 {
-	const float tilt_deg = math::degrees(tilt_of(target_relative()));
+	const float tilt_rad = tilt_of(target_relative());
+	const float tilt_deg = math::degrees(tilt_rad);
+
+	// The thrust actually published at the target's tilt - what
+	// publish_setpoint() will send once the ramp arrives, not the raw
+	// HRATT_THRUST value alone.
+	const float thrust = compensate_thrust(base_thrust(), tilt_rad, _param_hratt_thrust_k.get());
+
+	if (fabsf(_param_hratt_thrust.get()) < 1e-6f) {
+		PX4_INFO("HRATT_THRUST is 0 - using MPC_THR_HOVER (%.2f) as base thrust instead.",
+			 (double)base_thrust());
+	}
+
+	if (fabsf(thrust) > 1.f) {
+		// The mixer's own ceiling, independent of tilt: no HRATT_THRUST_K
+		// setting makes a thrust_body magnitude past 1.0 meaningful, it just
+		// saturates at the allocator instead of at the value asked for here.
+		PX4_WARN("HRATT_THRUST_K makes the compensated thrust %.2f at this target's tilt (%0.f deg) - "
+			 "exceeds 1.0, lower HRATT_THRUST_K.", (double)thrust, (double)tilt_deg);
+	}
 
 	if (tilt_deg <= 90.f) {
 		return;
@@ -398,13 +442,11 @@ void HoldRigAtt::check_thrust_against_tilt() const
 
 	// Past 90 degrees the body z axis points upward, so a negative
 	// thrust_body[2] - which is the "up" direction in body FRD - now
-	// accelerates the airframe downward. There is no 1/cos(tilt)
-	// compensation on the attitude path; the position controller normally
-	// does that and is not in the loop here.
-	const float thrust = _param_hratt_thrust.get();
-
+	// accelerates the airframe downward. HRATT_THRUST_K only ever scales the
+	// magnitude of that same push, it does not redirect it - the position
+	// controller normally handles the sign flip and is not in the loop here.
 	if (fabsf(thrust) > 0.3f) {
-		PX4_WARN("Tilt %.0f deg is inverted and HRATT_THRUST is %.2f - thrust now pushes DOWN. Reduce it.",
+		PX4_WARN("Tilt %.0f deg is inverted and effective thrust is %.2f - thrust now pushes DOWN. Reduce it.",
 			 (double)tilt_deg, (double)thrust);
 	}
 }
@@ -454,7 +496,11 @@ void HoldRigAtt::publish_setpoint(hrt_abstime now, const Quatf &q_sp)
 	q_sp.copyTo(sp.q_d);
 	sp.thrust_body[0] = 0.f;
 	sp.thrust_body[1] = 0.f;
-	sp.thrust_body[2] = _param_hratt_thrust.get();
+	// Scaled by q_sp's OWN tilt, not the final target's, so the boost phases
+	// in alongside the ramp instead of stepping to full value on cycle one -
+	// see HRATT_THRUST_K. base_thrust() falls back to MPC_THR_HOVER when
+	// HRATT_THRUST is left at 0.
+	sp.thrust_body[2] = compensate_thrust(base_thrust(), tilt_of(q_sp), _param_hratt_thrust_k.get());
 	_vehicle_attitude_setpoint_pub.publish(sp);
 
 	_last_publish_timestamp = now;

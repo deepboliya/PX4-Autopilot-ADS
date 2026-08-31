@@ -261,25 +261,80 @@ parameters:
         short: Normalized body-Z thrust held throughout
         long: |
           Passed straight through as thrust_body[2] during tracking, the ramp
-          and the hold (negative = upward in PX4's body frame). There is no
-          sensible default across airframes - it MUST be set to match this
-          vehicle's actual hover thrust (check a previous stable-hover log or
-          MC_HOVER_THRUST_ESTIMATOR output) before running.
+          and the hold (negative = upward in PX4's body frame).
 
-          Note that -0.5 is also the value at which the mixer has the most
-          symmetric motor headroom, min(u0, 1-u0), and therefore the most torque
-          available before roll/pitch clips. Moving away from -0.5 in either
-          direction costs authority, and with MC_AIRMODE=0 the allocator's first
-          response to a saturating torque demand is to reduce collective thrust.
+          Left at its default of 0, the module instead reads MPC_THR_HOVER
+          every cycle (sign-flipped) and uses that as the base thrust. This is
+          deliberately the same number mc_pos_control already uses and that
+          this module's docs used to tell you to go copy in by hand - there is
+          no reason to keep two independently-tunable copies of "this
+          vehicle's hover thrust" in sync. Set HRATT_THRUST to a nonzero value
+          only to override that: for example, -0.5 is the value at which the
+          mixer has the most symmetric motor headroom, min(u0, 1-u0), which is
+          rarely the same number as this vehicle's actual hover thrust and is
+          why HRATT_THRUST_K exists rather than just chasing -0.5 here.
+          Moving away from whichever base is in effect costs authority in one
+          direction to buy it in the other, and with MC_AIRMODE=0 the
+          allocator's first response to a saturating torque demand is to
+          reduce collective thrust regardless.
 
-          There is no tilt compensation on this path. The value is held constant
-          no matter how far over the airframe is leaning, so past 90 degrees of
-          tilt it drives the airframe downward into its mount - see HRATT_TILT.
-          Reduce the magnitude before running those angles.
+          This is the value used at zero tilt; see HRATT_THRUST_K for how it
+          scales as the commanded tilt grows. Whichever base is in effect is
+          still held constant no matter how far over the airframe is leaning
+          past 90 degrees of tilt - it then drives the airframe downward into
+          its mount, compensation or not - see HRATT_TILT. Reduce the
+          magnitude before running those angles.
       type: float
-      default: -0.2
+      default: 0.0
       min: -1.0
       max: 0.0
+      decimal: 2
+
+    HRATT_THRUST_K:
+      description:
+        short: Thrust boost gain as commanded tilt increases
+        long: |
+          hold_rig_att's own logs showed the same motor pinned at its floor for
+          the entire hold on several large-tilt targets, unchanged across a
+          4x MC_ROLL_P increase and moving HRATT_THRUST to the mixer's
+          symmetric-headroom optimum of -0.5. Neither moved the residual error,
+          because for a STATIC target the roll/pitch differential the
+          allocator must apply is one-sided for the whole hold - it always
+          drives the same motor toward 0 - so the fix is not a faster
+          correction (MC_ROLL_P) or a differently-balanced default (-0.5), it
+          is more headroom on the specific side already being consumed. That
+          means a larger |HRATT_THRUST|, and it should grow with tilt: more of
+          the commanded attitude is differential rather than pure collective
+          the further over the airframe leans.
+
+          The published thrust becomes:
+
+              thrust_body[2] = HRATT_THRUST * (1 + HRATT_THRUST_K * sin(tilt))
+
+          using the LEADER's current tilt (tilt_of() in AttitudeRampMath.hpp),
+          not the final target's - so the boost phases in smoothly alongside
+          the ramp and is already at its full value by the time the leader
+          parks, rather than stepping the whole way at once.
+
+          Default 0 reproduces the old constant-thrust behaviour exactly. This
+          will not help a residual error that repeats identically regardless
+          of tuning (see HRATT_RATE's docs on that failure mode) - that is a
+          mechanical limit on the rig, not a torque budget, and no thrust
+          schedule fixes it. It is aimed at the other kind of failure: a
+          target within reach whose margin is thin enough that it saturates
+          unpredictably run to run.
+
+          There is no first-principles value for this gain - unlike
+          HRATT_THRUST there is no hover weight to support here, only motor
+          headroom to buy back, so pick it empirically from a log showing
+          which motor saturates and by how much. check_thrust_against_tilt()
+          warns if the resulting thrust magnitude exceeds 1.0 at the current
+          target's tilt, which is the mixer's own ceiling regardless of what
+          is asked for.
+      type: float
+      default: 0.0
+      min: 0.0
+      max: 2.0
       decimal: 2
 
     HRATT_RAMP_T:

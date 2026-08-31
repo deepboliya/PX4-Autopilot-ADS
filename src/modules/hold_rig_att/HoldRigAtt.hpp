@@ -97,10 +97,12 @@ using namespace time_literals;
 // all attitude setpoints, so it works with nothing more than a valid attitude
 // estimate (no GPS, no optical flow, no motion capture needed). Built for a
 // mount that physically cannot translate (e.g. a 3-axis gimbal/gyroscope rig):
-// thrust is a fixed passthrough with no 1/cos(tilt) compensation and no
-// altitude loop, so beyond 90 degrees of tilt it drives the airframe into its
-// fixture rather than away from it. It does NOT attempt to hold or return to
-// any position. It is NOT gated by offboard_selector - start it directly with
+// there is no altitude loop, and thrust only ever scales with commanded tilt
+// (HRATT_THRUST_K, see AttitudeRampMath::compensate_thrust()) to buy back
+// motor headroom - never with any notion of weight support - so beyond 90
+// degrees of tilt it still drives the airframe into its fixture rather than
+// away from it. It does NOT attempt to hold or return to any position. It is
+// NOT gated by offboard_selector - start it directly with
 // `hold_rig_att start` from the shell.
 class HoldRigAtt : public ModuleBase, public ModuleParams, public px4::ScheduledWorkItem
 {
@@ -121,6 +123,13 @@ private:
 	void Run() override;
 
 	void parameters_updated();
+
+	// HRATT_THRUST if it has been set to anything nonzero; otherwise
+	// MPC_THR_HOVER, sign-flipped to thrust_body[2]'s negative-up
+	// convention. MPC_THR_HOVER is looked up by cached handle rather than
+	// by name every cycle - this is called from publish_setpoint(), which
+	// runs at up to HRATT_PUB_HZ.
+	float base_thrust() const;
 
 	// Startup/parameter-change sanity checks. Each warns rather than
 	// silently clamping, because quietly altering a commanded attitude or
@@ -168,6 +177,12 @@ private:
 
 	uORB::Publication<offboard_control_mode_s> _offboard_control_mode_pub{ORB_ID(offboard_control_mode)};
 	uORB::Publication<vehicle_attitude_setpoint_s> _vehicle_attitude_setpoint_pub{ORB_ID(vehicle_attitude_setpoint)};
+
+	// MPC_THR_HOVER belongs to mc_pos_control, not this module - resolved
+	// once by name (see base_thrust()) rather than declared through
+	// DEFINE_PARAMETERS below, matching how every other external parameter
+	// in this file (MC_ROLL_P, FD_FAIL_R, ...) is read via param_find/param_get.
+	param_t _param_mpc_thr_hover_handle{PARAM_INVALID};
 
 	uint8_t _nav_state{0};   // NAVIGATION_STATE_MANUAL until the first vehicle_status arrives, i.e. "not OFFBOARD"
 	matrix::Quatf _current_att{1.f, 0.f, 0.f, 0.f};
@@ -226,6 +241,7 @@ private:
 		(ParamFloat<px4::params::HRATT_PITCH>) _param_hratt_pitch,
 		(ParamFloat<px4::params::HRATT_RATE>) _param_hratt_rate,
 		(ParamFloat<px4::params::HRATT_THRUST>) _param_hratt_thrust,
+		(ParamFloat<px4::params::HRATT_THRUST_K>) _param_hratt_thrust_k,
 		(ParamFloat<px4::params::HRATT_RAMP_T>) _param_hratt_ramp_t,
 		(ParamInt<px4::params::HRATT_PUB_HZ>) _param_hratt_pub_hz,
 		(ParamBool<px4::params::HRATT_LIVE>) _param_hratt_live,
