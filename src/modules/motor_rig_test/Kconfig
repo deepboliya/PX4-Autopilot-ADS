@@ -1,0 +1,15 @@
+menuconfig MODULES_MOTOR_RIG_TEST
+	bool "motor_rig_test"
+	default n
+	---help---
+		Enable support for motor_rig_test
+
+		Standalone, manually-started bench/ground-test tool that spins any
+		combination of this quad's 4 motors, each at its own independently
+		set thrust value (MRIGT_MOTORS bitmask selects the motors,
+		MRIGT_M1_THR..MRIGT_M4_THR the per-motor values), through the same
+		actuator_test override path as the `actuator_test` command. Only
+		ever applies while disarmed - refuses to command anything if the
+		vehicle is armed. Remove propellers before use. Start with
+		`motor_rig_test start` and stop with `motor_rig_test stop` or by
+		clearing MRIGT_MOTORS to 0.
