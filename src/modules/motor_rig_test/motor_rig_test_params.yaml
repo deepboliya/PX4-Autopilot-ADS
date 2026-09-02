@@ -1,0 +1,107 @@
+module_name: motor_rig_test
+parameters:
+- group: Motor Rig Test
+  definitions:
+    MRIGT_MOTORS:
+      description:
+        short: Which motor(s) to spin (bench test) - bitmask, any combination
+        long: |
+          One bit per motor - tick any combination in QGroundControl (or set
+          the decimal sum via `param set`, e.g. 5 = bit0+bit2 = motors 1 and
+          3). Every ticked motor is put into actuator_test DO_CONTROL mode
+          every publish cycle, each at ITS OWN MRIGT_M<n>_THR value; every
+          motor whose bit is not set is left at its normal disarmed (off)
+          value. Only applied while the vehicle is disarmed. Clearing a bit
+          (or disarming) releases that motor immediately rather than waiting
+          for it to time out. Remove propellers (or use a restraining
+          fixture) before use.
+      type: bitmask
+      bit:
+        0: Motor 1
+        1: Motor 2
+        2: Motor 3
+        3: Motor 4
+      default: 0
+      min: 0
+      max: 15
+
+    MRIGT_M1_THR:
+      description:
+        short: Normalized thrust commanded to motor 1 when its bit is set in MRIGT_MOTORS
+        long: |
+          Passed straight through as the actuator_test value for motor 1 (0
+          = stopped/minimum thrust, 1 = maximum). Start low - this is a
+          bench test, not a hover thrust setting. Has no effect unless bit 0
+          of MRIGT_MOTORS is set.
+      type: float
+      default: 0.15
+      min: 0.0
+      max: 1.0
+      decimal: 2
+
+    MRIGT_M2_THR:
+      description:
+        short: Normalized thrust commanded to motor 2 when its bit is set in MRIGT_MOTORS
+        long: |
+          Same as MRIGT_M1_THR, for motor 2. Has no effect unless bit 1 of
+          MRIGT_MOTORS is set.
+      type: float
+      default: 0.15
+      min: 0.0
+      max: 1.0
+      decimal: 2
+
+    MRIGT_M3_THR:
+      description:
+        short: Normalized thrust commanded to motor 3 when its bit is set in MRIGT_MOTORS
+        long: |
+          Same as MRIGT_M1_THR, for motor 3. Has no effect unless bit 2 of
+          MRIGT_MOTORS is set.
+      type: float
+      default: 0.15
+      min: 0.0
+      max: 1.0
+      decimal: 2
+
+    MRIGT_M4_THR:
+      description:
+        short: Normalized thrust commanded to motor 4 when its bit is set in MRIGT_MOTORS
+        long: |
+          Same as MRIGT_M1_THR, for motor 4. Has no effect unless bit 3 of
+          MRIGT_MOTORS is set.
+      type: float
+      default: 0.15
+      min: 0.0
+      max: 1.0
+      decimal: 2
+
+    MRIGT_TIMEOUT:
+      description:
+        short: actuator_test timeout safety net
+        long: |
+          Re-armed every publish cycle while the module is actively
+          commanding a motor, so the override never lapses on its own as
+          long as the module keeps running. If the module stops updating
+          (crash, work queue stall) for longer than this, ActuatorTest's own
+          timeout releases the motor independently of this module - this is
+          a fallback, not the primary stop path (stopping the module or
+          clearing a motor's bit in MRIGT_MOTORS releases it immediately).
+      type: int32
+      default: 500
+      min: 100
+      max: 5000
+      unit: ms
+
+    MRIGT_PUB_HZ:
+      description:
+        short: Publish/refresh rate for the actuator_test override
+        long: |
+          Must stay comfortably faster than 1000 / MRIGT_TIMEOUT so the
+          override is refreshed well before it would time out. Applied at
+          module start; runtime changes take effect on the next
+          parameter-update tick (the work item is rescheduled).
+      type: int32
+      default: 20
+      min: 5
+      max: 100
+      unit: Hz
