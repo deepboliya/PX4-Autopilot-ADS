@@ -115,6 +115,40 @@ void MotorRigTest::Run()
 		parameters_updated();
 	}
 
+	// ------------------------------------------------------------
+	// OFFBOARD safety gate
+	//
+	// This module is allowed to control the motor actuator-test
+	// override only while the vehicle is in OFFBOARD mode.
+	// If OFFBOARD is left, explicitly release every active motor
+	// before stopping the module. This avoids waiting for the
+	// actuator_test timeout to expire.
+	// ------------------------------------------------------------
+	vehicle_status_s status{};
+
+	if (_vehicle_status_sub.update(&status)) {
+		_nav_state = status.nav_state;
+	}
+
+	const bool is_offboard =
+		(_nav_state == vehicle_status_s::NAVIGATION_STATE_OFFBOARD);
+
+	if (!is_offboard) {
+		PX4_INFO("OFFBOARD not active - stopping motor rig test");
+
+		for (int i = 0; i < NUM_MOTORS; ++i) {
+			if (_active_mask & (1 << i)) {
+				publish_actuator_test(i + 1, actuator_test_s::ACTION_RELEASE_CONTROL, NAN);
+			}
+		}
+
+		_active_mask = 0;
+
+		ScheduleClear();
+		exit_and_cleanup(desc);
+		return;
+	}
+
 	actuator_armed_s armed{};
 	_actuator_armed_sub.copy(&armed);
 	const bool is_armed = armed.armed || armed.kill;
@@ -196,6 +230,9 @@ int MotorRigTest::print_status()
 
 	PX4_INFO("active_mask=0x%x tests_published=%" PRIu64 " early_return_armed=%" PRIu64,
 		 _active_mask, _tests_published, _early_return_armed);
+
+	PX4_INFO("nav_state=%u offboard=%d", (unsigned)_nav_state,
+		 (int)(_nav_state == vehicle_status_s::NAVIGATION_STATE_OFFBOARD));
 
 	return 0;
 }

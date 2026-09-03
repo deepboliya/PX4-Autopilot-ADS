@@ -45,6 +45,7 @@
 #include <uORB/topics/actuator_armed.h>
 #include <uORB/topics/actuator_test.h>
 #include <uORB/topics/parameter_update.h>
+#include <uORB/topics/vehicle_status.h>
 
 using namespace time_literals;
 
@@ -91,6 +92,7 @@ private:
 
 	uORB::Subscription _actuator_armed_sub{ORB_ID(actuator_armed)};
 	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
+	uORB::Subscription _vehicle_status_sub{ORB_ID(vehicle_status)};
 
 	uORB::Publication<actuator_test_s> _actuator_test_pub{ORB_ID(actuator_test)};
 
@@ -102,6 +104,11 @@ private:
 	// actuator_test timeout to stop it.
 	uint8_t _active_mask{0};
 	bool _was_armed{false};
+
+	// Motor rig test is allowed to operate only while the vehicle is in
+	// OFFBOARD mode. Any other navigation state causes an immediate
+	// release of all active actuator-test overrides and module shutdown.
+	uint8_t _nav_state{vehicle_status_s::NAVIGATION_STATE_MANUAL};
 
 	uint64_t _tests_published{0};
 	uint64_t _early_return_armed{0};
