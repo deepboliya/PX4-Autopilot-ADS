@@ -218,9 +218,9 @@ int MotorRigTest::task_spawn(int argc, char *argv[])
 int MotorRigTest::print_status()
 {
 	PX4_INFO("motors_mask=0x%x (bit0=M1..bit3=M4) timeout=%d ms armed=%d",
-		 _param_mrigt_motors.get(),
-		 _param_mrigt_timeout.get(),
-		 (int)_was_armed);
+         static_cast<unsigned int>(_param_mrigt_motors.get()),
+         static_cast<int>(_param_mrigt_timeout.get()),
+         (int)_was_armed);
 
 	PX4_INFO("thrust: M1=%.2f M2=%.2f M3=%.2f M4=%.2f",
 		 (double)_param_mrigt_m1_thr.get(),
